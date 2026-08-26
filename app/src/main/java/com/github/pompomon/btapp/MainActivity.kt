@@ -64,8 +64,11 @@ private fun BtApp(state: ConnectionState, viewModel: ConnectionViewModel, reques
         Text(statusText(state))
         when (state) {
             ConnectionState.PermissionRequired -> Button(onClick = requestPermissions) { Text("Grant Bluetooth permission") }
-            ConnectionState.Ready, ConnectionState.BluetoothDisabled, ConnectionState.Unsupported,
-            is ConnectionState.Error -> Button(onClick = viewModel::register) { Text("Register HID device") }
+            ConnectionState.Ready, is ConnectionState.Error ->
+                Button(onClick = viewModel::register) { Text("Register HID device") }
+            ConnectionState.BluetoothDisabled ->
+                OutlinedButton(onClick = viewModel::register) { Text("Check Bluetooth status") }
+            ConnectionState.Unsupported -> Unit
             else -> Unit
         }
         if (state is ConnectionState.Registered || state is ConnectionState.Connected) {

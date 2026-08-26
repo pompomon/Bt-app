@@ -45,7 +45,13 @@ class BluetoothController(
             when (state) {
                 BluetoothHidDevice.STATE_CONNECTED -> {
                     host = device
-                    onStateChanged(ConnectionState.Connected(device.name ?: "Bluetooth host"))
+                    val name = try {
+                        device.name ?: "Bluetooth host"
+                    } catch (exception: SecurityException) {
+                        Log.w(TAG, "Bluetooth host name unavailable", exception)
+                        "Bluetooth host"
+                    }
+                    onStateChanged(ConnectionState.Connected(name))
                 }
                 BluetoothHidDevice.STATE_DISCONNECTED -> {
                     host = null
@@ -104,7 +110,10 @@ class BluetoothController(
     fun sendMouse(report: ByteArray) = send(HidReportEncoder.MOUSE_REPORT_ID, report)
 
     private fun send(reportId: Int, report: ByteArray): Boolean {
-        require(report.size > 1) { "HID reports must include an ID and payload." }
+        require(
+            (reportId == HidReportEncoder.KEYBOARD_REPORT_ID && report.size == 9) ||
+                (reportId == HidReportEncoder.MOUSE_REPORT_ID && report.size == 5)
+        ) { "HID report ID and payload length do not match." }
         val target = host ?: run {
             onStateChanged(ConnectionState.Error("No Bluetooth host is connected."))
             return false
