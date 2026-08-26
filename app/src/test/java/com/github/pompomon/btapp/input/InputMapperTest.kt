@@ -4,7 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
-class InputMapperTest {
+class InputTest {
     private val mapper = KeyboardInputMapper()
 
     @Test fun `maps letters function keys and shortcuts to HID usages`() {

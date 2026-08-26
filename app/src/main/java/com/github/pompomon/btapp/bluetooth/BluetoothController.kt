@@ -122,13 +122,21 @@ class BluetoothController(
     fun disconnect() {
         sendKeyboard(HidReportEncoder.keyboard(0, emptyList()))
         sendMouse(HidReportEncoder.mouse(0, 0, 0))
-        host?.let { hidDevice?.disconnect(it) }
+        try {
+            host?.let { hidDevice?.disconnect(it) }
+        } catch (exception: SecurityException) {
+            Log.w(TAG, "Bluetooth disconnect rejected", exception)
+        }
         host = null
     }
 
     fun close() {
         disconnect()
-        hidDevice?.unregisterApp()
+        try {
+            hidDevice?.unregisterApp()
+        } catch (exception: SecurityException) {
+            Log.w(TAG, "Bluetooth HID unregister rejected", exception)
+        }
         hidDevice?.let { adapter?.closeProfileProxy(BluetoothProfile.HID_DEVICE, it) }
         hidDevice = null
     }
