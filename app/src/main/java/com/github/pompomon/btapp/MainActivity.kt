@@ -24,6 +24,8 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
@@ -54,8 +56,9 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+@Composable
 private fun BtApp(state: ConnectionState, viewModel: ConnectionViewModel, requestPermissions: () -> Unit) {
-    var keyboard by mutableStateOf(false)
+    var keyboard by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Bt-app", style = MaterialTheme.typography.headlineMedium)
         Text(statusText(state))
@@ -77,6 +80,7 @@ private fun BtApp(state: ConnectionState, viewModel: ConnectionViewModel, reques
     }
 }
 
+@Composable
 private fun Touchpad(viewModel: ConnectionViewModel) {
     Text("Touchpad: tap to click; drag to move.")
     Column(
@@ -96,6 +100,7 @@ private fun Touchpad(viewModel: ConnectionViewModel) {
     ) {}
 }
 
+@Composable
 private fun Keyboard(viewModel: ConnectionViewModel) {
     listOf("QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM").forEach { row ->
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {

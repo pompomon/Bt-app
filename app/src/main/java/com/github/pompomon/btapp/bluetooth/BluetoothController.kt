@@ -104,6 +104,7 @@ class BluetoothController(
     fun sendMouse(report: ByteArray) = send(HidReportEncoder.MOUSE_REPORT_ID, report)
 
     private fun send(reportId: Int, report: ByteArray): Boolean {
+        require(report.size > 1) { "HID reports must include an ID and payload." }
         val target = host ?: run {
             onStateChanged(ConnectionState.Error("No Bluetooth host is connected."))
             return false
