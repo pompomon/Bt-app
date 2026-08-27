@@ -5,6 +5,7 @@ import android.bluetooth.BluetoothAdapter
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -64,10 +65,15 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun requestDiscoverability() {
-        discoverableLauncher.launch(
-            Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE)
-                .putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, 120)
-        )
+        try {
+            discoverableLauncher.launch(
+                Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE)
+                    .putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, 120)
+            )
+        } catch (exception: SecurityException) {
+            Log.w("MainActivity", "Bluetooth discoverability request rejected", exception)
+            viewModel.register()
+        }
     }
 }
 
@@ -99,6 +105,8 @@ private fun BtApp(
                 Button(onClick = viewModel::register) { Text("Register HID device") }
             ConnectionState.BluetoothDisabled ->
                 OutlinedButton(onClick = viewModel::register) { Text("Check Bluetooth status") }
+            ConnectionState.Registered ->
+                Button(onClick = requestDiscoverability) { Text("Make discoverable") }
             ConnectionState.Unsupported -> Unit
             else -> Unit
         }
@@ -142,9 +150,12 @@ private fun Keyboard(viewModel: ConnectionViewModel) {
             OutlinedButton(onClick = { modifiers = modifiers xor modifier }) { Text(if (modifiers and modifier != 0) "✓ $label" else label) }
         }
     }
-    listOf("1234567890", "F1 F2 F3 F4 F5 F6 F7 F8 F9 F10 F11 F12").forEach { row ->
+    listOf(
+        "1234567890".map(Char::toString),
+        "F1 F2 F3 F4 F5 F6 F7 F8 F9 F10 F11 F12".split(" ")
+    ).forEach { row ->
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            row.split(" ").flatMap { if (it.length > 1) listOf(it) else it.map(Char::toString) }.forEach { key ->
+            row.forEach { key ->
                 OutlinedButton(onClick = { viewModel.key(key, modifiers) }) { Text(key) }
             }
         }
