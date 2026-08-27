@@ -37,6 +37,11 @@ object HidReportEncoder {
         return byteArrayOf(MOUSE_REPORT_ID.toByte(), buttons.toByte(), x.toByte(), y.toByte(), wheel.toByte())
     }
 
+    fun mouseSequence(buttons: Int, x: Int, y: Int, wheel: Int = 0): List<ByteArray> =
+        splitMovement(x, y).ifEmpty { listOf(0 to 0) }.mapIndexed { index, (dx, dy) ->
+            mouse(buttons, dx, dy, if (index == 0) wheel.coerceIn(-127, 127) else 0)
+        }
+
     fun splitMovement(x: Int, y: Int): List<Pair<Int, Int>> {
         val result = mutableListOf<Pair<Int, Int>>()
         var remainingX = x

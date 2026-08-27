@@ -179,6 +179,6 @@ private fun statusText(state: ConnectionState): String = when (state) {
     ConnectionState.Ready -> "Ready to register as a Bluetooth keyboard and mouse."
     ConnectionState.Registering -> "Registering Bluetooth HID device…"
     ConnectionState.Registered -> "HID registered. Pair from the PC Bluetooth settings."
-    is ConnectionState.Connected -> "Connected to ${state.deviceName}."
+    is ConnectionState.Connected -> state.errorMessage ?: "Connected to ${state.deviceName}."
     is ConnectionState.Error -> state.message
 }

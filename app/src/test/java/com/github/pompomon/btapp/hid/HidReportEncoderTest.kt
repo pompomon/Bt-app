@@ -16,6 +16,10 @@ class HidReportEncoderTest {
         assertEquals(listOf(127 to -127, 127 to -127, 46 to -46), HidReportEncoder.splitMovement(300, -300))
     }
 
+    @Test fun `wheel delta is emitted once when movement is split`() {
+        assertEquals(listOf(1, 0, 0), HidReportEncoder.mouseSequence(0, 300, 0, 1).map { it[4].toInt() })
+    }
+
     @Test fun `mouse report rejects values outside HID range`() {
         try {
             HidReportEncoder.mouse(0, 128, 0)
@@ -24,4 +28,3 @@ class HidReportEncoderTest {
         }
     }
 }
-

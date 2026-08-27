@@ -31,9 +31,7 @@ class ConnectionViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun mouse(buttons: Int, x: Int, y: Int, wheel: Int = 0) {
-        HidReportEncoder.splitMovement(x, y).ifEmpty { listOf(0 to 0) }.forEach { (dx, dy) ->
-            controller.sendMouse(HidReportEncoder.mouse(buttons, dx, dy, wheel.coerceIn(-127, 127)))
-        }
+        HidReportEncoder.mouseSequence(buttons, x, y, wheel).forEach(controller::sendMouse)
     }
 
     override fun onCleared() {

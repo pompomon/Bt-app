@@ -22,7 +22,7 @@ sealed interface ConnectionState {
     data object Ready : ConnectionState
     data object Registering : ConnectionState
     data object Registered : ConnectionState
-    data class Connected(val deviceName: String) : ConnectionState
+    data class Connected(val deviceName: String, val errorMessage: String? = null) : ConnectionState
     data class Error(val message: String) : ConnectionState
 }
 
@@ -33,45 +33,73 @@ class BluetoothController(
     private val adapter: BluetoothAdapter? = context.getSystemService(BluetoothManager::class.java)?.adapter
     private var hidDevice: BluetoothHidDevice? = null
     private var host: BluetoothDevice? = null
+    private var connectedDeviceName = "Bluetooth host"
+    private var pendingRegistration = false
+    private var closed = false
     private val executor: Executor = context.mainExecutor
 
     private val callback = object : BluetoothHidDevice.Callback() {
         override fun onAppStatusChanged(pluggedDevice: BluetoothDevice?, registered: Boolean) {
+            if (closed) return
             host = pluggedDevice
-            onStateChanged(if (registered) ConnectionState.Registered else ConnectionState.Ready)
+            if (registered) {
+                pendingRegistration = false
+                onStateChanged(ConnectionState.Registered)
+            } else if (pendingRegistration) {
+                pendingRegistration = false
+                onStateChanged(ConnectionState.Error("Could not register the Bluetooth HID device."))
+            } else {
+                onStateChanged(initialState())
+            }
         }
 
         override fun onConnectionStateChanged(device: BluetoothDevice, state: Int) {
+            if (closed) return
             when (state) {
                 BluetoothHidDevice.STATE_CONNECTED -> {
                     host = device
-                    val name = try {
+                    connectedDeviceName = try {
                         device.name ?: "Bluetooth host"
                     } catch (exception: SecurityException) {
                         Log.w(TAG, "Bluetooth host name unavailable", exception)
                         "Bluetooth host"
                     }
-                    onStateChanged(ConnectionState.Connected(name))
+                    onStateChanged(ConnectionState.Connected(connectedDeviceName))
                 }
                 BluetoothHidDevice.STATE_DISCONNECTED -> {
                     host = null
+                    connectedDeviceName = "Bluetooth host"
                     onStateChanged(ConnectionState.Registered)
                 }
             }
         }
     }
 
-    fun initialState(): ConnectionState = when {
-        adapter == null -> ConnectionState.Unsupported
-        !hasBluetoothPermission() -> ConnectionState.PermissionRequired
-        !adapter.isEnabled -> ConnectionState.BluetoothDisabled
-        else -> ConnectionState.Ready
+    fun initialState(): ConnectionState {
+        val bluetoothAdapter = adapter ?: return ConnectionState.Unsupported
+        if (!hasBluetoothPermission()) return ConnectionState.PermissionRequired
+        val enabled = try {
+            bluetoothAdapter.isEnabled
+        } catch (exception: SecurityException) {
+            Log.w(TAG, "Bluetooth status access rejected", exception)
+            return ConnectionState.PermissionRequired
+        }
+        return if (enabled) ConnectionState.Ready else ConnectionState.BluetoothDisabled
     }
 
     fun register() {
         when (val state = initialState()) {
             ConnectionState.Ready -> {
+                if (closed) return
                 onStateChanged(ConnectionState.Registering)
+                host?.let {
+                    onStateChanged(ConnectionState.Connected(connectedDeviceName))
+                    return
+                }
+                hidDevice?.let {
+                    registerApp(it)
+                    return
+                }
                 val requested = try {
                     adapter!!.getProfileProxy(context, profileListener, BluetoothProfile.HID_DEVICE)
                 } catch (exception: SecurityException) {
@@ -89,34 +117,46 @@ class BluetoothController(
 
     private val profileListener = object : android.bluetooth.BluetoothProfile.ServiceListener {
         override fun onServiceConnected(profile: Int, proxy: android.bluetooth.BluetoothProfile) {
-            hidDevice = proxy as? BluetoothHidDevice
-            val device = hidDevice ?: run {
+            if (closed) {
+                closeProfileProxy(proxy)
+                return
+            }
+            val device = proxy as? BluetoothHidDevice ?: run {
+                closeProfileProxy(proxy)
                 onStateChanged(ConnectionState.Error("Bluetooth HID profile is unavailable on this device."))
                 return
             }
-            val sdp = BluetoothHidDeviceAppSdpSettings(
-                "Bt-app keyboard and mouse",
-                "Standard Bluetooth HID keyboard and relative mouse",
-                "pompomon",
-                BluetoothHidDevice.SUBCLASS1_COMBO,
-                HidDescriptor.bytes
-            )
-            val registered = try {
-                device.registerApp(sdp, null, null, executor, callback)
-            } catch (exception: SecurityException) {
-                Log.w(TAG, "Bluetooth HID registration rejected", exception)
-                onStateChanged(ConnectionState.PermissionRequired)
-                return
-            }
-            if (!registered) {
-                onStateChanged(ConnectionState.Error("Could not register the Bluetooth HID device."))
-            }
+            hidDevice = device
+            registerApp(device)
         }
 
         override fun onServiceDisconnected(profile: Int) {
             hidDevice = null
             host = null
-            onStateChanged(ConnectionState.Ready)
+            if (!closed) onStateChanged(initialState())
+        }
+    }
+
+    private fun registerApp(device: BluetoothHidDevice) {
+        val sdp = BluetoothHidDeviceAppSdpSettings(
+            "Bt-app keyboard and mouse",
+            "Standard Bluetooth HID keyboard and relative mouse",
+            "pompomon",
+            BluetoothHidDevice.SUBCLASS1_COMBO,
+            HidDescriptor.bytes
+        )
+        pendingRegistration = true
+        val registered = try {
+            device.registerApp(sdp, null, null, executor, callback)
+        } catch (exception: SecurityException) {
+            pendingRegistration = false
+            Log.w(TAG, "Bluetooth HID registration rejected", exception)
+            onStateChanged(ConnectionState.PermissionRequired)
+            return
+        }
+        if (!registered) {
+            pendingRegistration = false
+            onStateChanged(ConnectionState.Error("Could not register the Bluetooth HID device."))
         }
     }
 
@@ -129,39 +169,84 @@ class BluetoothController(
                 (reportId == HidReportEncoder.MOUSE_REPORT_ID && report.size == 5)
         ) { "HID report ID and payload length do not match." }
         val target = host ?: run {
-            onStateChanged(ConnectionState.Error("No Bluetooth host is connected."))
+            onStateChanged(if (hidDevice == null) initialState() else ConnectionState.Registered)
             return false
         }
         val sent = try {
             hidDevice?.sendReport(target, reportId, report.copyOfRange(1, report.size)) == true
         } catch (exception: SecurityException) {
             Log.w(TAG, "Bluetooth report rejected", exception)
-            false
+            onStateChanged(ConnectionState.PermissionRequired)
+            return false
         }
-        if (!sent) onStateChanged(ConnectionState.Error("Could not send the HID report."))
+        if (sent) {
+            onStateChanged(ConnectionState.Connected(connectedDeviceName))
+        } else {
+            showConnectionError("Could not send the HID report.")
+        }
         return sent
     }
 
     fun disconnect() {
         sendKeyboard(HidReportEncoder.keyboard(0, emptyList()))
         sendMouse(HidReportEncoder.mouse(0, 0, 0))
-        try {
-            host?.let { hidDevice?.disconnect(it) }
+        val target = host ?: return
+        val device = hidDevice ?: run {
+            showConnectionError("Bluetooth HID profile is unavailable.")
+            return
+        }
+        val requested = try {
+            device.disconnect(target)
         } catch (exception: SecurityException) {
             Log.w(TAG, "Bluetooth disconnect rejected", exception)
+            onStateChanged(ConnectionState.PermissionRequired)
+            return
         }
-        host = null
+        if (!requested) showConnectionError("Could not disconnect from the Bluetooth host.")
     }
 
     fun close() {
-        disconnect()
+        closed = true
+        pendingRegistration = false
+        val device = hidDevice
+        val target = host
         try {
-            hidDevice?.unregisterApp()
+            if (device != null && target != null) {
+                device.sendReport(
+                    target,
+                    HidReportEncoder.KEYBOARD_REPORT_ID,
+                    HidReportEncoder.keyboard(0, emptyList()).copyOfRange(1, 9)
+                )
+                device.sendReport(
+                    target,
+                    HidReportEncoder.MOUSE_REPORT_ID,
+                    HidReportEncoder.mouse(0, 0, 0).copyOfRange(1, 5)
+                )
+                device.disconnect(target)
+            }
+        } catch (exception: SecurityException) {
+            Log.w(TAG, "Bluetooth HID disconnect cleanup rejected", exception)
+        }
+        try {
+            device?.unregisterApp()
         } catch (exception: SecurityException) {
             Log.w(TAG, "Bluetooth HID unregister rejected", exception)
         }
-        hidDevice?.let { adapter?.closeProfileProxy(BluetoothProfile.HID_DEVICE, it) }
+        device?.let(::closeProfileProxy)
         hidDevice = null
+        host = null
+    }
+
+    private fun showConnectionError(message: String) {
+        onStateChanged(ConnectionState.Connected(connectedDeviceName, message))
+    }
+
+    private fun closeProfileProxy(proxy: BluetoothProfile) {
+        try {
+            adapter?.closeProfileProxy(BluetoothProfile.HID_DEVICE, proxy)
+        } catch (exception: SecurityException) {
+            Log.w(TAG, "Bluetooth HID profile cleanup rejected", exception)
+        }
     }
 
     private fun hasBluetoothPermission(): Boolean =
