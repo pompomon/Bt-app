@@ -10,20 +10,25 @@ object HidModifier {
 }
 
 class KeyboardInputMapper {
-    fun map(key: String): KeyStroke? = when (key.uppercase()) {
-        in "A".."Z" -> KeyStroke(0x04 + (key.uppercase()[0].code - 'A'.code))
-        in "1".."9" -> KeyStroke(0x1e + (key[0].code - '1'.code))
-        "0" -> KeyStroke(0x27)
-        "SPACE" -> KeyStroke(0x2c)
-        "ENTER" -> KeyStroke(0x28)
-        "BACKSPACE" -> KeyStroke(0x2a)
-        "TAB" -> KeyStroke(0x2b)
-        "ESC" -> KeyStroke(0x29)
-        "LEFT" -> KeyStroke(0x50)
-        "RIGHT" -> KeyStroke(0x4f)
-        "UP" -> KeyStroke(0x52)
-        "DOWN" -> KeyStroke(0x51)
-        else -> functionKey(key)
+    fun map(key: String): KeyStroke? {
+        val normalized = key.uppercase()
+        return when {
+            normalized.length == 1 && normalized[0] in 'A'..'Z' ->
+                KeyStroke(0x04 + (normalized[0].code - 'A'.code))
+            normalized.length == 1 && normalized[0] in '1'..'9' ->
+                KeyStroke(0x1e + (normalized[0].code - '1'.code))
+            normalized == "0" -> KeyStroke(0x27)
+            normalized == "SPACE" -> KeyStroke(0x2c)
+            normalized == "ENTER" -> KeyStroke(0x28)
+            normalized == "BACKSPACE" -> KeyStroke(0x2a)
+            normalized == "TAB" -> KeyStroke(0x2b)
+            normalized == "ESC" -> KeyStroke(0x29)
+            normalized == "LEFT" -> KeyStroke(0x50)
+            normalized == "RIGHT" -> KeyStroke(0x4f)
+            normalized == "UP" -> KeyStroke(0x52)
+            normalized == "DOWN" -> KeyStroke(0x51)
+            else -> functionKey(normalized)
+        }
     }
 
     fun shortcut(key: String, modifier: Int = HidModifier.CTRL): KeyStroke? =

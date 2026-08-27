@@ -24,7 +24,8 @@ class ConnectionViewModel(application: Application) : AndroidViewModel(applicati
     fun disconnect() = controller.disconnect()
 
     fun key(key: String, modifiers: Int = 0) {
-        val stroke = mapper.map(key)?.copy(modifiers = modifiers) ?: return
+        val stroke = if (modifiers == 0) mapper.map(key) else mapper.shortcut(key, modifiers)
+        if (stroke == null) return
         controller.sendKeyboard(HidReportEncoder.keyboard(stroke.modifiers, listOf(stroke.usage)))
         controller.sendKeyboard(HidReportEncoder.keyboard(0, emptyList()))
     }
@@ -39,4 +40,3 @@ class ConnectionViewModel(application: Application) : AndroidViewModel(applicati
         controller.close()
     }
 }
-

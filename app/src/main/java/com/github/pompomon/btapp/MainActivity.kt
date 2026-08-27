@@ -1,6 +1,8 @@
 package com.github.pompomon.btapp
 
 import android.Manifest
+import android.bluetooth.BluetoothAdapter
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -10,6 +12,9 @@ import androidx.activity.viewModels
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -22,9 +27,10 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -32,34 +38,59 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.github.pompomon.btapp.bluetooth.ConnectionState
+import com.github.pompomon.btapp.input.HidModifier
 
 class MainActivity : ComponentActivity() {
     private val viewModel by viewModels<ConnectionViewModel>()
     private val permissionLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
-        // Registration checks permission again and presents an actionable state if denied.
+        viewModel.register()
     }
+    private val discoverableLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {}
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
             MaterialTheme {
                 val state by viewModel.state.collectAsStateWithLifecycle()
-                BtApp(state, viewModel, ::requestBluetoothPermissions)
+                BtApp(state, viewModel, ::requestBluetoothPermissions, ::requestDiscoverability)
             }
         }
     }
 
     private fun requestBluetoothPermissions() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            permissionLauncher.launch(arrayOf(Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_SCAN))
+            permissionLauncher.launch(arrayOf(Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_ADVERTISE))
         }
+    }
+
+    private fun requestDiscoverability() {
+        discoverableLauncher.launch(
+            Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE)
+                .putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, 120)
+        )
     }
 }
 
 @Composable
-private fun BtApp(state: ConnectionState, viewModel: ConnectionViewModel, requestPermissions: () -> Unit) {
+private fun BtApp(
+    state: ConnectionState,
+    viewModel: ConnectionViewModel,
+    requestPermissions: () -> Unit,
+    requestDiscoverability: () -> Unit
+) {
     var keyboard by remember { mutableStateOf(false) }
-    Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    var registrationPending by remember { mutableStateOf(false) }
+    LaunchedEffect(state) {
+        if (state is ConnectionState.Registering) registrationPending = true
+        if (state is ConnectionState.Registered && registrationPending) {
+            registrationPending = false
+            requestDiscoverability()
+        }
+    }
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
         Text("Bt-app", style = MaterialTheme.typography.headlineMedium)
         Text(statusText(state))
         when (state) {
@@ -71,7 +102,7 @@ private fun BtApp(state: ConnectionState, viewModel: ConnectionViewModel, reques
             ConnectionState.Unsupported -> Unit
             else -> Unit
         }
-        if (state is ConnectionState.Registered || state is ConnectionState.Connected) {
+        if (state is ConnectionState.Connected) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = { keyboard = false }) { Text("Touchpad") }
                 OutlinedButton(onClick = { keyboard = true }) { Text("Keyboard") }
@@ -79,7 +110,7 @@ private fun BtApp(state: ConnectionState, viewModel: ConnectionViewModel, reques
             }
             if (keyboard) Keyboard(viewModel) else Touchpad(viewModel)
         }
-        Text("Pair this phone from your PC's Bluetooth settings after registering. No PC companion app is required.")
+        Text("After registering, allow discoverability and pair this phone from your PC's Bluetooth settings. No PC companion app is required.")
     }
 }
 
@@ -105,14 +136,27 @@ private fun Touchpad(viewModel: ConnectionViewModel) {
 
 @Composable
 private fun Keyboard(viewModel: ConnectionViewModel) {
-    listOf("QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM").forEach { row ->
-        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            row.forEach { key -> OutlinedButton(onClick = { viewModel.key(key) }, modifier = Modifier.width(42.dp)) { Text(key) } }
+    var modifiers by remember { mutableStateOf(0) }
+    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        listOf("CTRL" to HidModifier.CTRL, "SHIFT" to HidModifier.SHIFT, "ALT" to HidModifier.ALT, "META" to HidModifier.META).forEach { (label, modifier) ->
+            OutlinedButton(onClick = { modifiers = modifiers xor modifier }) { Text(if (modifiers and modifier != 0) "✓ $label" else label) }
         }
     }
-    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+    listOf("1234567890", "F1 F2 F3 F4 F5 F6 F7 F8 F9 F10 F11 F12").forEach { row ->
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            row.split(" ").flatMap { if (it.length > 1) listOf(it) else it.map(Char::toString) }.forEach { key ->
+                OutlinedButton(onClick = { viewModel.key(key, modifiers) }) { Text(key) }
+            }
+        }
+    }
+    listOf("QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM").forEach { row ->
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            row.forEach { key -> OutlinedButton(onClick = { viewModel.key(key.toString(), modifiers) }, modifier = Modifier.width(42.dp)) { Text(key.toString()) } }
+        }
+    }
+    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         listOf("ESC", "TAB", "SPACE", "ENTER", "BACKSPACE", "LEFT", "UP", "DOWN", "RIGHT").forEach { key ->
-            OutlinedButton(onClick = { viewModel.key(key) }) { Text(key) }
+            OutlinedButton(onClick = { viewModel.key(key, modifiers) }) { Text(key) }
         }
     }
 }

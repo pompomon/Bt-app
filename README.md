@@ -38,9 +38,10 @@ no APKs or build artifacts.
 1. Install and open the app, grant the Android 12+ Nearby devices/Bluetooth
    permission, and turn Bluetooth on.
 2. Tap **Register HID device**.
-3. On Windows, open **Settings → Bluetooth & devices**; on Linux use the system
-   Bluetooth settings; on macOS use **System Settings → Bluetooth**. Pair the
-   phone when it appears as “Bt-app keyboard and mouse”.
+3. Allow the system discoverability prompt. On Windows, open **Settings →
+   Bluetooth & devices**; on Linux use the system Bluetooth settings; on macOS
+   use **System Settings → Bluetooth**. Pair the phone when it appears as
+   “Bt-app keyboard and mouse”.
 4. Return to the app after the host connects, then use Touchpad or Keyboard.
 
 If it cannot register, verify Bluetooth is enabled, re-grant Nearby devices
@@ -69,7 +70,7 @@ pointer reports are transmitted only to the connected Bluetooth host. Pair only
 with trusted computers: typed key events are received by that host. Logs contain
 Bluetooth operational failures but never typed text or input contents.
 
-`BLUETOOTH_CONNECT` is used to register and communicate with the HID profile;
-`BLUETOOTH_SCAN` is requested alongside it for Android's Nearby devices group
-and future system-mediated pairing interaction. No location permission, desktop
-service, background service, or PC-side component is used.
+`BLUETOOTH_CONNECT` is used to register and communicate with the HID profile,
+and `BLUETOOTH_ADVERTISE` is used for the system discoverability prompt. The app
+does not request scan or location permission. No desktop service, background
+service, or PC-side component is used.

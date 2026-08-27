@@ -72,7 +72,14 @@ class BluetoothController(
         when (val state = initialState()) {
             ConnectionState.Ready -> {
                 onStateChanged(ConnectionState.Registering)
-                if (!adapter!!.getProfileProxy(context, profileListener, BluetoothProfile.HID_DEVICE)) {
+                val requested = try {
+                    adapter!!.getProfileProxy(context, profileListener, BluetoothProfile.HID_DEVICE)
+                } catch (exception: SecurityException) {
+                    Log.w(TAG, "Bluetooth HID profile access rejected", exception)
+                    onStateChanged(ConnectionState.PermissionRequired)
+                    return
+                }
+                if (!requested) {
                     onStateChanged(ConnectionState.Error("Bluetooth HID profile is unavailable on this device."))
                 }
             }
@@ -94,7 +101,14 @@ class BluetoothController(
                 BluetoothHidDevice.SUBCLASS1_COMBO,
                 HidDescriptor.bytes
             )
-            if (!device.registerApp(sdp, null, null, executor, callback)) {
+            val registered = try {
+                device.registerApp(sdp, null, null, executor, callback)
+            } catch (exception: SecurityException) {
+                Log.w(TAG, "Bluetooth HID registration rejected", exception)
+                onStateChanged(ConnectionState.PermissionRequired)
+                return
+            }
+            if (!registered) {
                 onStateChanged(ConnectionState.Error("Could not register the Bluetooth HID device."))
             }
         }
@@ -152,7 +166,10 @@ class BluetoothController(
 
     private fun hasBluetoothPermission(): Boolean =
         Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
-            context.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
+            (
+                context.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED &&
+                    context.checkSelfPermission(Manifest.permission.BLUETOOTH_ADVERTISE) == PackageManager.PERMISSION_GRANTED
+                )
 
     private companion object {
         const val TAG = "BluetoothController"
