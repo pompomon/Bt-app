@@ -188,13 +188,13 @@ class BluetoothController(
     }
 
     fun disconnect() {
-        sendKeyboard(HidReportEncoder.keyboard(0, emptyList()))
-        sendMouse(HidReportEncoder.mouse(0, 0, 0))
         val target = host ?: return
         val device = hidDevice ?: run {
             showConnectionError("Bluetooth HID profile is unavailable.")
             return
         }
+        sendKeyboard(HidReportEncoder.keyboard(0, emptyList()))
+        sendMouse(HidReportEncoder.mouse(0, 0, 0))
         val requested = try {
             device.disconnect(target)
         } catch (exception: SecurityException) {
