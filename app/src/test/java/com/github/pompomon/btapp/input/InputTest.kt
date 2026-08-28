@@ -35,4 +35,25 @@ class InputTest {
     @Test fun `scroll is clamped`() {
         assertEquals(PointerEvent.Scroll(127), TouchpadGestureDetector(1f, 2f).scroll(100f))
     }
+
+    @Test fun `fractional movement accumulates until it can be emitted`() {
+        val detector = TouchpadGestureDetector()
+        val moves = List(10) { detector.move(0.4f, -0.4f) }
+        val scrolls = List(10) { detector.scroll(0.4f) }
+
+        assertEquals(4, moves.sumOf { it.x })
+        assertEquals(-4, moves.sumOf { it.y })
+        assertEquals(4, scrolls.sumOf { it.amount })
+    }
+
+    @Test fun `cancellation clears fractional movement`() {
+        val detector = TouchpadGestureDetector()
+        detector.move(0.6f, -0.6f)
+        detector.scroll(0.6f)
+
+        detector.cancel()
+
+        assertEquals(PointerEvent.Move(0, 0), detector.move(0.4f, -0.4f))
+        assertEquals(PointerEvent.Scroll(0), detector.scroll(0.4f))
+    }
 }
