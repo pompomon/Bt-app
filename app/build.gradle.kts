@@ -19,7 +19,16 @@ android {
 
     buildFeatures { compose = true }
 
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
     testOptions { unitTests.all { it.useJUnit() } }
+}
+
+kotlin {
+    jvmToolchain(17)
 }
 
 dependencies {
