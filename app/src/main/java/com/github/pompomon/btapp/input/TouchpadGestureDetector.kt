@@ -16,6 +16,12 @@ class TouchpadGestureDetector(
     fun scroll(deltaY: Float): PointerEvent.Scroll =
         PointerEvent.Scroll((deltaY * scrollSensitivity).toInt().coerceIn(-127, 127))
 
+    fun drag(fingerCount: Int, deltaX: Float, deltaY: Float): PointerEvent? = when (fingerCount) {
+        1 -> move(deltaX, deltaY)
+        2 -> scroll(deltaY)
+        else -> null
+    }
+
     fun tap(fingerCount: Int): PointerEvent.Button? = when (fingerCount) {
         1 -> PointerEvent.Button(1, true)
         2 -> PointerEvent.Button(2, true)
@@ -24,4 +30,3 @@ class TouchpadGestureDetector(
 
     fun cancel(): PointerEvent.Button = PointerEvent.Button(0, false)
 }
-

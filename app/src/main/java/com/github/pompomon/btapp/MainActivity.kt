@@ -11,8 +11,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -23,7 +22,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -35,11 +33,17 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.github.pompomon.btapp.bluetooth.ConnectionState
 import com.github.pompomon.btapp.input.HidModifier
+import com.github.pompomon.btapp.input.TouchpadGestureDetector
 
 class MainActivity : ComponentActivity() {
     private val viewModel by viewModels<ConnectionViewModel>()
@@ -111,9 +115,17 @@ private fun BtApp(
             else -> Unit
         }
         if (state is ConnectionState.Connected) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { keyboard = false }) { Text("Touchpad") }
-                OutlinedButton(onClick = { keyboard = true }) { Text("Keyboard") }
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (keyboard) {
+                    OutlinedButton(onClick = { keyboard = false }) { Text("Touchpad") }
+                    Button(onClick = { keyboard = true }) { Text("Keyboard") }
+                } else {
+                    Button(onClick = { keyboard = false }) { Text("Touchpad") }
+                    OutlinedButton(onClick = { keyboard = true }) { Text("Keyboard") }
+                }
                 OutlinedButton(onClick = viewModel::disconnect) { Text("Disconnect") }
             }
             if (keyboard) Keyboard(viewModel) else Touchpad(viewModel)
@@ -124,22 +136,76 @@ private fun BtApp(
 
 @Composable
 private fun Touchpad(viewModel: ConnectionViewModel) {
-    Text("Touchpad: tap to click; drag to move.")
+    val detector = remember { TouchpadGestureDetector() }
+    val click: (Int) -> Unit = { fingerCount ->
+        detector.tap(fingerCount)?.let(viewModel::pointer)
+        viewModel.pointer(detector.cancel())
+    }
+    Text("Touchpad: one-finger tap/drag to click/move; two-finger tap/drag to right-click/scroll.")
     Column(
         Modifier.fillMaxWidth().height(360.dp).background(MaterialTheme.colorScheme.surfaceVariant)
-            .pointerInput(Unit) {
-                detectTapGestures(onTap = {
-                    viewModel.mouse(1, 0, 0)
-                    viewModel.mouse(0, 0, 0)
-                })
+            .semantics {
+                contentDescription = "Touchpad"
+                onClick("Left click") {
+                    click(1)
+                    true
+                }
             }
-            .pointerInput(Unit) {
-                detectDragGestures(
-                    onDragEnd = { viewModel.mouse(0, 0, 0) },
-                    onDragCancel = { viewModel.mouse(0, 0, 0) }
-                ) { _, dragAmount -> viewModel.mouse(0, dragAmount.x.toInt(), dragAmount.y.toInt()) }
+            .pointerInput(detector, viewModel) {
+                awaitEachGesture {
+                    var accumulatedDelta = Offset.Zero
+                    var dragStarted = false
+                    var maxFingerCount = 0
+                    var previousFingerCount = 0
+                    var pointersDown: Boolean
+                    try {
+                        do {
+                            val pointerEvent = awaitPointerEvent()
+                            val fingerCount = pointerEvent.changes.count { it.pressed }
+                            pointersDown = fingerCount > 0
+                            maxFingerCount = maxOf(maxFingerCount, fingerCount)
+                            if (fingerCount != previousFingerCount) {
+                                accumulatedDelta = Offset.Zero
+                                previousFingerCount = fingerCount
+                            }
+                            if (pointerEvent.changes.any { it.isConsumed }) {
+                                dragStarted = true
+                                continue
+                            }
+                            if (maxFingerCount > fingerCount && fingerCount > 0) {
+                                pointerEvent.changes.filter { it.pressed }.forEach { it.consume() }
+                                continue
+                            }
+                            val changes = pointerEvent.changes.filter { it.pressed && it.previousPressed }
+                            if (fingerCount !in 1..2 || changes.isEmpty()) continue
+                            val delta = Offset(
+                                changes.sumOf { it.positionChange().x.toDouble() }.toFloat() / changes.size,
+                                changes.sumOf { it.positionChange().y.toDouble() }.toFloat() / changes.size
+                            )
+                            accumulatedDelta += delta
+                            if (!dragStarted && accumulatedDelta.getDistance() <= viewConfiguration.touchSlop) continue
+                            val dragDelta = if (dragStarted) delta else accumulatedDelta
+                            dragStarted = true
+                            accumulatedDelta = Offset.Zero
+                            detector.drag(fingerCount, dragDelta.x, dragDelta.y)?.let(viewModel::pointer)
+                            changes.forEach { it.consume() }
+                        } while (pointersDown)
+                        if (!dragStarted) detector.tap(maxFingerCount)?.let(viewModel::pointer)
+                    } finally {
+                        viewModel.pointer(detector.cancel())
+                    }
+                }
             }
     ) {}
+    Row(
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        OutlinedButton(onClick = { click(1) }) { Text("Left click") }
+        OutlinedButton(onClick = { click(2) }) { Text("Right click") }
+        OutlinedButton(onClick = { viewModel.pointer(detector.scroll(1f)) }) { Text("Scroll up") }
+        OutlinedButton(onClick = { viewModel.pointer(detector.scroll(-1f)) }) { Text("Scroll down") }
+    }
 }
 
 @Composable
@@ -162,7 +228,7 @@ private fun Keyboard(viewModel: ConnectionViewModel) {
     }
     listOf("QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM").forEach { row ->
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            row.forEach { key -> OutlinedButton(onClick = { viewModel.key(key.toString(), modifiers) }, modifier = Modifier.width(42.dp)) { Text(key.toString()) } }
+            row.forEach { key -> OutlinedButton(onClick = { viewModel.key(key.toString(), modifiers) }) { Text(key.toString()) } }
         }
     }
     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {

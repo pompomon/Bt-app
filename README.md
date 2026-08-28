@@ -14,11 +14,10 @@ the host operating system, so typing is deliberately implemented as physical
 key events rather than Android text input. HID availability varies by Android
 device and vendor. Hardware pairing is not exercised in CI.
 
-The touchpad supports tap-to-left-click and drag movement. The input layer also
-recognizes two-finger taps as right-click and vertical scroll events; these are
-kept separate from Bluetooth transport so their gesture plumbing can evolve
-without changing HID reporting. Movement is split into signed 8-bit HID reports
-and all keys/buttons are released on disconnect or gesture cancellation.
+The touchpad supports one-finger tap-to-left-click and drag movement, plus
+two-finger tap-to-right-click and vertical scrolling. Movement is split into
+signed 8-bit HID reports and all keys/buttons are released on disconnect or
+gesture cancellation.
 
 ## Build and test
 
@@ -40,8 +39,9 @@ no APKs or build artifacts.
 2. Tap **Register HID device**.
 3. Allow the system discoverability prompt. On Windows, open **Settings →
    Bluetooth & devices**; on Linux use the system Bluetooth settings; on macOS
-   use **System Settings → Bluetooth**. Pair the phone when it appears as
-   “Bt-app keyboard and mouse”.
+   use **System Settings → Bluetooth**. Select the phone's model or configured
+   Bluetooth device name; pairing screens may not show the app's HID service
+   name (“Bt-app keyboard and mouse”).
 4. Return to the app after the host connects, then use Touchpad or Keyboard.
 
 If it cannot register, verify Bluetooth is enabled, re-grant Nearby devices
