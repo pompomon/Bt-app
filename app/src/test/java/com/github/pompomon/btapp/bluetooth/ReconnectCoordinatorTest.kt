@@ -100,6 +100,14 @@ class ReconnectCoordinatorTest {
         )
     }
 
+    @Test fun `backgrounding cancels an in-flight automatic reconnect`() {
+        val fixture = Fixture(remembered)
+        fixture.connectRememberedHost()
+
+        assertTrue(fixture.coordinator.onBackground())
+        assertEquals(ConnectionDecision.Disconnect, fixture.coordinator.onConnected(remembered))
+    }
+
     @Test fun `unavailable Bluetooth prerequisites cancel pending retry`() {
         val fixture = Fixture(remembered)
         fixture.connectRememberedHost()
@@ -164,6 +172,19 @@ class ReconnectCoordinatorTest {
             fixture.coordinator.onRegistrationSucceeded(emptyList())
         )
         assertTrue(fixture.coordinator.onRegistrationSucceeded(emptyList()).isEmpty())
+    }
+
+    @Test fun `failed pairing attempt remains awaiting another host`() {
+        val fixture = Fixture()
+        fixture.coordinator.onForeground(true, emptyList())
+        fixture.coordinator.onPairRequested(true)
+        fixture.coordinator.onRegistrationSucceeded(emptyList())
+        fixture.coordinator.onConnectionRequested()
+
+        assertEquals(ReconnectDisposition.Idle, fixture.coordinator.onConnectionLost())
+        assertFalse(fixture.coordinator.onBackground())
+        assertEquals(ConnectionDecision.Accept, fixture.coordinator.onConnected(other))
+        assertEquals(other, fixture.store.host)
     }
 
     private class Fixture(initialHost: RememberedHost? = null) {

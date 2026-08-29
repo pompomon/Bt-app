@@ -61,9 +61,11 @@ internal class ReconnectCoordinator(
         return if (prerequisitesAvailable) advance(bondedHosts) else emptyList()
     }
 
-    fun onBackground() {
+    fun onBackground(): Boolean {
+        val cancelConnection = connectionRequested && intent == Intent.Reconnect
         foreground = false
         cancelRetry()
+        return cancelConnection
     }
 
     fun onPrerequisitesUnavailable() {
@@ -148,7 +150,7 @@ internal class ReconnectCoordinator(
         connectionRequested = false
         connectedAddress = null
         if (reconnectSuppressed || !foreground || hostStore.load() == null) {
-            intent = Intent.None
+            if (intent != Intent.AwaitingPair) intent = Intent.None
             return ReconnectDisposition.Idle
         }
         intent = Intent.Reconnect
@@ -160,7 +162,7 @@ internal class ReconnectCoordinator(
         registrationRequested = false
         connectionRequested = false
         cancelRetry()
-        if (reconnectSuppressed && intent != Intent.AwaitingPair) {
+        if ((reconnectSuppressed || !foreground) && intent != Intent.AwaitingPair) {
             return ConnectionDecision.Disconnect
         }
         connectedAddress = normalizeBluetoothAddress(host.address)
@@ -181,6 +183,8 @@ internal class ReconnectCoordinator(
     }
 
     fun rememberedHost(): RememberedHost? = hostStore.load()
+
+    fun isReconnectPending(): Boolean = intent == Intent.Reconnect
 
     private fun advance(bondedHosts: Collection<RememberedHost>?): List<ReconnectAction> {
         if (!foreground) return emptyList()

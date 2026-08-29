@@ -71,7 +71,7 @@ class BluetoothController(
                 connectedDeviceName = DEFAULT_HOST_NAME
                 coordinator.onRegistrationLost()
                 if (registrationWasPending) {
-                    onStateChanged(ConnectionState.Error("Could not register the Bluetooth HID device."))
+                    showRegistrationFailure("Could not register the Bluetooth HID device.")
                 } else {
                     when (coordinator.onConnectionLost()) {
                         ReconnectDisposition.RetryScheduled ->
@@ -128,7 +128,9 @@ class BluetoothController(
     }
 
     fun onBackground() {
-        coordinator.onBackground()
+        if (coordinator.onBackground()) {
+            connectionTarget?.let { disconnectDevice(it, releaseReports = false) }
+        }
     }
 
     fun prepareForPermissionRequest() {
@@ -221,7 +223,7 @@ class BluetoothController(
         if (!requested) {
             profileRequestPending = false
             coordinator.onRegistrationFailed()
-            onStateChanged(ConnectionState.Error("Bluetooth HID profile is unavailable on this device."))
+            showRegistrationFailure("Bluetooth HID profile is unavailable on this device.")
         }
     }
 
@@ -235,7 +237,7 @@ class BluetoothController(
             val device = proxy as? BluetoothHidDevice ?: run {
                 closeProfileProxy(proxy)
                 coordinator.onRegistrationFailed()
-                onStateChanged(ConnectionState.Error("Bluetooth HID profile is unavailable on this device."))
+                showRegistrationFailure("Bluetooth HID profile is unavailable on this device.")
                 return
             }
             hidDevice = device
@@ -252,10 +254,12 @@ class BluetoothController(
             coordinator.onRegistrationLost()
             if (!closed) {
                 val disposition = coordinator.onConnectionLost()
-                if (disposition == ReconnectDisposition.RetryScheduled) {
-                    showReconnectFailure("Bluetooth HID service was interrupted. Retrying…")
-                } else {
-                    onStateChanged(initialState())
+                when (disposition) {
+                    ReconnectDisposition.RetryScheduled ->
+                        showReconnectFailure("Bluetooth HID service was interrupted. Retrying…")
+                    ReconnectDisposition.Exhausted ->
+                        showReconnectFailure("Bluetooth HID service was interrupted. Tap Retry to try again.")
+                    ReconnectDisposition.Idle -> onStateChanged(initialState())
                 }
             }
         }
@@ -283,7 +287,7 @@ class BluetoothController(
         if (!registered) {
             pendingRegistration = false
             coordinator.onRegistrationFailed()
-            onStateChanged(ConnectionState.Error("Could not register the Bluetooth HID device."))
+            showRegistrationFailure("Could not register the Bluetooth HID device.")
         }
     }
 
@@ -570,6 +574,14 @@ class BluetoothController(
                 message
             )
         )
+    }
+
+    private fun showRegistrationFailure(message: String) {
+        if (coordinator.isReconnectPending()) {
+            showReconnectFailure("$message Tap Retry to try again.")
+        } else {
+            onStateChanged(ConnectionState.Error(message))
+        }
     }
 
     private fun reconnectFailureMessage(disposition: ReconnectDisposition): String =
