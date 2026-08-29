@@ -7,6 +7,8 @@
 
     <application
         android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
         android:label="Bt-app"
         android:theme="@style/Theme.BtApp">
         <activity
