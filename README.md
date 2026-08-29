@@ -12,7 +12,7 @@ profile. It provides individual HID key events, common navigation keys, F1–F12
 and a relative touchpad. Keyboard layout and text composition are interpreted by
 the host operating system, so typing is deliberately implemented as physical
 key events rather than Android text input. HID availability varies by Android
-device and vendor. Hardware pairing is not exercised in CI.
+device and vendor. Hardware pairing and reconnection are not exercised in CI.
 
 The touchpad supports one-finger tap-to-left-click and drag movement, plus
 two-finger tap-to-right-click and vertical scrolling. Movement is split into
@@ -37,13 +37,26 @@ disabled because this repository has a strict Actions storage budget.
 
 1. Install and open the app, grant the Android 12+ Nearby devices/Bluetooth
    permission, and turn Bluetooth on.
-2. Tap **Register HID device**.
+2. Tap **Pair a device**.
 3. Allow the system discoverability prompt. On Windows, open **Settings →
    Bluetooth & devices**; on Linux use the system Bluetooth settings; on macOS
    use **System Settings → Bluetooth**. Select the phone's model or configured
    Bluetooth device name; pairing screens may not show the app's HID service
    name (“Bt-app keyboard and mouse”).
 4. Return to the app after the host connects, then use Touchpad or Keyboard.
+
+The app remembers the last computer that successfully established an HID
+connection. On later launches it registers the HID profile and reconnects to
+that computer automatically, with up to three delayed retries after an
+unexpected disconnect. Automatic reconnect runs only while the app is open in
+the foreground; there is no background service or persistent notification.
+
+Tap **Disconnect** to stop reconnecting for the current app session without
+forgetting the computer. Use **Reconnect** to try it again, **Pair another
+device** to make the phone discoverable for a different computer, or **Forget
+device** to remove the saved computer. If the saved computer is no longer
+bonded in Android settings, the app removes the stale saved entry and asks you
+to pair again.
 
 If it cannot register, verify Bluetooth is enabled, re-grant Nearby devices
 permission, and check whether the phone supports the HID Device profile. Remove
@@ -74,4 +87,6 @@ Bluetooth operational failures but never typed text or input contents.
 `BLUETOOTH_CONNECT` is used to register and communicate with the HID profile,
 and `BLUETOOTH_ADVERTISE` is used for the system discoverability prompt. The app
 does not request scan or location permission. No desktop service, background
-service, or PC-side component is used.
+service, or PC-side component is used. The remembered Bluetooth address is
+stored only in app-private preferences and is excluded from Android backup and
+device transfer.

@@ -44,13 +44,16 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.github.pompomon.btapp.bluetooth.ConnectionState
 import com.github.pompomon.btapp.input.HidModifier
 import com.github.pompomon.btapp.input.TouchpadGestureDetector
+import kotlinx.coroutines.flow.collect
 
 class MainActivity : ComponentActivity() {
     private val viewModel by viewModels<ConnectionViewModel>()
     private val permissionLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
-        viewModel.register()
+        viewModel.onPrerequisitesChanged()
     }
-    private val discoverableLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {}
+    private val discoverableLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        viewModel.onDiscoverabilityResult(it.resultCode)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -62,9 +65,22 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        viewModel.onForeground()
+    }
+
+    override fun onStop() {
+        viewModel.onBackground()
+        super.onStop()
+    }
+
     private fun requestBluetoothPermissions() {
+        viewModel.prepareForPermissionRequest()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             permissionLauncher.launch(arrayOf(Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_ADVERTISE))
+        } else {
+            viewModel.onPrerequisitesChanged()
         }
     }
 
@@ -76,7 +92,8 @@ class MainActivity : ComponentActivity() {
             )
         } catch (exception: SecurityException) {
             Log.w("MainActivity", "Bluetooth discoverability request rejected", exception)
-            viewModel.register()
+            viewModel.onDiscoverabilityResult(0)
+            viewModel.onPrerequisitesChanged()
         }
     }
 }
@@ -89,12 +106,11 @@ private fun BtApp(
     requestDiscoverability: () -> Unit
 ) {
     var keyboard by remember { mutableStateOf(false) }
-    var registrationPending by remember { mutableStateOf(false) }
-    LaunchedEffect(state) {
-        if (state is ConnectionState.Registering) registrationPending = true
-        if (state is ConnectionState.Registered && registrationPending) {
-            registrationPending = false
-            requestDiscoverability()
+    LaunchedEffect(viewModel) {
+        viewModel.events.collect { event ->
+            when (event) {
+                ConnectionEvent.RequestDiscoverability -> requestDiscoverability()
+            }
         }
     }
     Column(
@@ -106,11 +122,35 @@ private fun BtApp(
         when (state) {
             ConnectionState.PermissionRequired -> Button(onClick = requestPermissions) { Text("Grant Bluetooth permission") }
             ConnectionState.Ready, is ConnectionState.Error ->
-                Button(onClick = viewModel::register) { Text("Register HID device") }
+                Button(onClick = viewModel::pairNewDevice) { Text("Pair a device") }
             ConnectionState.BluetoothDisabled ->
-                OutlinedButton(onClick = viewModel::register) { Text("Check Bluetooth status") }
-            ConnectionState.Registered ->
-                Button(onClick = requestDiscoverability) { Text("Make discoverable") }
+                OutlinedButton(onClick = viewModel::onPrerequisitesChanged) { Text("Check Bluetooth status") }
+            is ConnectionState.Registered -> {
+                if (state.rememberedDeviceName == null) {
+                    Button(onClick = viewModel::pairNewDevice) { Text("Pair a device") }
+                } else {
+                    Row(
+                        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(onClick = viewModel::reconnect) { Text("Reconnect") }
+                        OutlinedButton(onClick = viewModel::pairNewDevice) { Text("Pair another device") }
+                        OutlinedButton(onClick = viewModel::forgetRememberedHost) { Text("Forget device") }
+                    }
+                }
+            }
+            is ConnectionState.ReconnectFailed -> {
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(onClick = viewModel::reconnect) { Text("Retry") }
+                    OutlinedButton(onClick = viewModel::pairNewDevice) { Text("Pair another device") }
+                    OutlinedButton(onClick = viewModel::forgetRememberedHost) { Text("Forget device") }
+                }
+            }
+            is ConnectionState.Reconnecting ->
+                OutlinedButton(onClick = viewModel::disconnect) { Text("Cancel") }
             ConnectionState.Unsupported -> Unit
             else -> Unit
         }
@@ -130,7 +170,7 @@ private fun BtApp(
             }
             if (keyboard) Keyboard(viewModel) else Touchpad(viewModel)
         }
-        Text("After registering, allow discoverability and pair this phone from your PC's Bluetooth settings. No PC companion app is required.")
+        Text("Pair from your PC's Bluetooth settings. The last connected computer reconnects automatically while this app is open.")
     }
 }
 
@@ -244,7 +284,12 @@ private fun statusText(state: ConnectionState): String = when (state) {
     ConnectionState.PermissionRequired -> "Bluetooth permission is required."
     ConnectionState.Ready -> "Ready to register as a Bluetooth keyboard and mouse."
     ConnectionState.Registering -> "Registering Bluetooth HID device…"
-    ConnectionState.Registered -> "HID registered. Pair from the PC Bluetooth settings."
+    is ConnectionState.Registered -> state.rememberedDeviceName?.let {
+        "HID registered. Ready to reconnect to $it."
+    } ?: "HID registered. Pair from the PC Bluetooth settings."
+    is ConnectionState.Reconnecting -> "Reconnecting to ${state.deviceName}…"
+    is ConnectionState.Disconnecting -> "Disconnecting from ${state.deviceName}…"
+    is ConnectionState.ReconnectFailed -> state.message
     is ConnectionState.Connected -> state.errorMessage ?: "Connected to ${state.deviceName}."
     is ConnectionState.Error -> state.message
 }

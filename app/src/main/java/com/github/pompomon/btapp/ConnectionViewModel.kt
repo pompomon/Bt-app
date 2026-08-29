@@ -7,22 +7,41 @@ import com.github.pompomon.btapp.bluetooth.ConnectionState
 import com.github.pompomon.btapp.hid.HidReportEncoder
 import com.github.pompomon.btapp.input.KeyboardInputMapper
 import com.github.pompomon.btapp.input.PointerEvent
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.receiveAsFlow
+
+sealed interface ConnectionEvent {
+    data object RequestDiscoverability : ConnectionEvent
+}
 
 class ConnectionViewModel(application: Application) : AndroidViewModel(application) {
     private val _state = MutableStateFlow<ConnectionState>(ConnectionState.Ready)
     val state: StateFlow<ConnectionState> = _state.asStateFlow()
-    private val controller = BluetoothController(application) { _state.value = it }
+    private val _events = Channel<ConnectionEvent>(Channel.BUFFERED)
+    val events = _events.receiveAsFlow()
+    private val controller = BluetoothController(
+        application,
+        { _state.value = it },
+        { _events.trySend(ConnectionEvent.RequestDiscoverability) }
+    )
     private val mapper = KeyboardInputMapper()
 
     init {
         _state.value = controller.initialState()
     }
 
-    fun register() = controller.register()
+    fun onForeground() = controller.onForeground()
+    fun onBackground() = controller.onBackground()
+    fun prepareForPermissionRequest() = controller.prepareForPermissionRequest()
+    fun onPrerequisitesChanged() = controller.onPrerequisitesChanged()
+    fun onDiscoverabilityResult(durationSeconds: Int) = controller.onDiscoverabilityResult(durationSeconds)
+    fun pairNewDevice() = controller.pairNewDevice()
+    fun reconnect() = controller.reconnect()
     fun disconnect() = controller.disconnect()
+    fun forgetRememberedHost() = controller.forgetRememberedHost()
 
     fun key(key: String, modifiers: Int = 0) {
         val stroke = if (modifiers == 0) mapper.map(key) else mapper.shortcut(key, modifiers)
@@ -45,5 +64,6 @@ class ConnectionViewModel(application: Application) : AndroidViewModel(applicati
 
     override fun onCleared() {
         controller.close()
+        _events.close()
     }
 }
