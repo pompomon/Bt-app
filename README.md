@@ -48,7 +48,8 @@ disabled because this repository has a strict Actions storage budget.
 The app stays in landscape in either direction while it is open. The connected
 screen keeps the connection controls in a compact header. The touchpad expands
 to the available space with click and scroll controls beside it, while the
-keyboard arranges every key in six rows without requiring scrolling.
+keyboard arranges every key in six rows and scrolls on smaller viewports to
+preserve accessible key targets.
 
 The app remembers the last computer that successfully established an HID
 connection. On later launches it registers the HID profile and reconnects to

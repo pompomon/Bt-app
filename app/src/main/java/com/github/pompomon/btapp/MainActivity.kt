@@ -24,9 +24,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.weight
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -384,23 +386,31 @@ private fun Keyboard(viewModel: ConnectionViewModel) {
         val compact = maxWidth < 700.dp || maxHeight < 300.dp
         val horizontalSpacing = if (compact) 2.dp else 4.dp
         val verticalSpacing = if (compact) 2.dp else 4.dp
+        val rowHeight = maxOf(
+            48.dp,
+            (maxHeight - verticalSpacing * (KeyboardLayout.rows.size - 1)) /
+                KeyboardLayout.rows.size.toFloat()
+        )
 
         Column(
-            Modifier.fillMaxSize(),
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(verticalSpacing)
         ) {
             KeyboardLayout.rows.forEach { row ->
+                val availableKeyWidth = maxWidth - horizontalSpacing * (row.size - 1)
+                val totalWeight = row.sumOf { it.weight.toDouble() }.toFloat()
                 Row(
-                    Modifier.fillMaxWidth().weight(1f),
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(horizontalSpacing)
                 ) {
                     row.forEach { key ->
                         val selected = key.modifier?.let { modifiers and it != 0 } ?: false
+                        val keyWidth = maxOf(48.dp, availableKeyWidth * key.weight / totalWeight)
                         KeyboardButton(
                             key = key,
                             selected = selected,
                             compact = compact,
-                            modifier = Modifier.weight(key.weight).fillMaxHeight(),
+                            modifier = Modifier.width(keyWidth).height(rowHeight),
                             onClick = {
                                 key.modifier?.let { modifiers = modifiers xor it }
                                     ?: key.command?.let { viewModel.key(it, modifiers) }
