@@ -95,8 +95,9 @@ internal class ReconnectCoordinator(
 
     fun onPairingWindowClosed(bondedHosts: Collection<RememberedHost>?): List<ReconnectAction> {
         if (intent != Intent.AwaitingPair) return emptyList()
-        reconnectSuppressed = false
-        intent = if (hostStore.load() == null) Intent.None else Intent.Reconnect
+        val hasRememberedHost = hostStore.load() != null
+        reconnectSuppressed = !hasRememberedHost
+        intent = if (hasRememberedHost) Intent.Reconnect else Intent.None
         return advance(bondedHosts)
     }
 
