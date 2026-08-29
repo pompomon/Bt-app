@@ -134,11 +134,7 @@ class BluetoothController(
     }
 
     fun prepareForPermissionRequest() {
-        if (coordinator.rememberedHost() == null) {
-            coordinator.onPairRequested(false)
-        } else {
-            coordinator.onManualReconnect(false, null)
-        }
+        coordinator.prepareForPermissionRequest()
     }
 
     fun onPrerequisitesChanged() {
@@ -448,6 +444,7 @@ class BluetoothController(
             if (releaseReports) releaseInputs(device, target)
             device.disconnect(target)
         } catch (exception: SecurityException) {
+            clearFailedConnectionTarget()
             Log.w(TAG, "Bluetooth disconnect rejected", exception)
             onStateChanged(ConnectionState.PermissionRequired)
             return
@@ -457,9 +454,14 @@ class BluetoothController(
         } else if (host != null) {
             showConnectionError("Could not disconnect from the Bluetooth host.")
         } else {
-            connectionTarget = null
+            clearFailedConnectionTarget()
             showStableState()
         }
+    }
+
+    private fun clearFailedConnectionTarget() {
+        connectionTarget = null
+        coordinator.onConnectionBlocked()
     }
 
     fun close() {

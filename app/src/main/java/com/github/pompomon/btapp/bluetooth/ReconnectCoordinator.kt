@@ -76,6 +76,15 @@ internal class ReconnectCoordinator(
     fun onPrerequisitesAvailable(bondedHosts: Collection<RememberedHost>?): List<ReconnectAction> =
         if (foreground) advance(bondedHosts) else emptyList()
 
+    fun prepareForPermissionRequest() {
+        if (intent != Intent.None) return
+        if (hostStore.load() == null) {
+            onPairRequested(false)
+        } else {
+            onManualReconnect(false, null)
+        }
+    }
+
     fun onPairRequested(prerequisitesAvailable: Boolean): List<ReconnectAction> {
         reconnectSuppressed = true
         intent = Intent.Pair
