@@ -16,13 +16,13 @@ internal object KeyboardLayout {
             (1..12).map { key("F$it", description = "Function $it") },
         listOf(key("TAB", "Tab", 1.4f, "Tab")) +
             "1234567890".map { key(it.toString()) } +
-            key("BACKSPACE", "⌫", 2f, "Backspace"),
+            listOf(key("BACKSPACE", "⌫", 2f, "Backspace")),
         "QWERTYUIOP".map { key(it.toString()) },
         "ASDFGHJKL".map { key(it.toString()) } +
-            key("ENTER", "Enter", 1.8f, "Enter"),
+            listOf(key("ENTER", "Enter", 1.8f, "Enter")),
         listOf(modifier("Shift", HidModifier.SHIFT, 1.8f, "Shift modifier")) +
             "ZXCVBNM".map { key(it.toString()) } +
-            key("UP", "↑", 1.2f, "Up arrow"),
+            listOf(key("UP", "↑", 1.2f, "Up arrow")),
         listOf(
             modifier("Ctrl", HidModifier.CTRL, 1.3f, "Control modifier"),
             modifier("Alt", HidModifier.ALT, 1.2f, "Alt modifier"),

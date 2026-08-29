@@ -384,24 +384,23 @@ private fun Keyboard(viewModel: ConnectionViewModel) {
     var modifiers by remember { mutableStateOf(0) }
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val compact = maxWidth < 700.dp || maxHeight < 300.dp
-        val horizontalSpacing = if (compact) 2.dp else 4.dp
-        val verticalSpacing = if (compact) 2.dp else 4.dp
-        val rowHeight = maxOf(
-            48.dp,
-            (maxHeight - verticalSpacing * (KeyboardLayout.rows.size - 1)) /
-                KeyboardLayout.rows.size.toFloat()
-        )
+        val spacing = if (compact) 2.dp else 4.dp
+        val rowHeight = 48.dp
 
         Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(verticalSpacing)
+            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = spacing),
+            verticalArrangement = Arrangement.spacedBy(spacing)
         ) {
-            KeyboardLayout.rows.forEach { row ->
-                val availableKeyWidth = maxWidth - horizontalSpacing * (row.size - 1)
+            KeyboardLayout.rows.forEachIndexed { rowIndex, row ->
+                val availableKeyWidth = maxWidth - 2 * spacing - spacing * (row.size - 1)
                 val totalWeight = row.sumOf { it.weight.toDouble() }.toFloat()
+                val minRowWidth = row.fold(0.dp) { width, key ->
+                    width + maxOf(48.dp, availableKeyWidth * key.weight / totalWeight)
+                } + spacing * (row.size - 1)
+                val rowScrollState = key(rowIndex) { rememberScrollState() }
                 Row(
-                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(horizontalSpacing)
+                    Modifier.widthIn(min = minRowWidth).horizontalScroll(rowScrollState),
+                    horizontalArrangement = Arrangement.spacedBy(spacing)
                 ) {
                     row.forEach { key ->
                         val selected = key.modifier?.let { modifiers and it != 0 } ?: false
