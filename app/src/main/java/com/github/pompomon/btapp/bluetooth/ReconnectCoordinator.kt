@@ -66,6 +66,11 @@ internal class ReconnectCoordinator(
         cancelRetry()
     }
 
+    fun onPrerequisitesUnavailable() {
+        connectionRequested = false
+        cancelRetry()
+    }
+
     fun onPrerequisitesAvailable(bondedHosts: Collection<RememberedHost>?): List<ReconnectAction> =
         if (foreground) advance(bondedHosts) else emptyList()
 
@@ -123,6 +128,11 @@ internal class ReconnectCoordinator(
 
     fun onConnectionRequested() {
         connectionRequested = true
+    }
+
+    fun onConnectionBlocked() {
+        connectionRequested = false
+        cancelRetry()
     }
 
     fun onConnectionRequestFailed(): ReconnectDisposition {
@@ -202,9 +212,7 @@ internal class ReconnectCoordinator(
             intent = Intent.None
             return emptyList()
         }
-        if (!registered) return requestRegistration()
-        if (connectionRequested || bondedHosts == null) return emptyList()
-
+        if (bondedHosts == null) return emptyList()
         val target = bondedHosts.firstOrNull {
             normalizeBluetoothAddress(it.address) == rememberedAddress
         } ?: run {
@@ -212,6 +220,9 @@ internal class ReconnectCoordinator(
             intent = Intent.None
             return listOf(ReconnectAction.RememberedHostUnavailable(remembered.name))
         }
+        if (!registered) return requestRegistration()
+        if (connectionRequested) return emptyList()
+
         connectionRequested = true
         val displayName = if (target.name == DEFAULT_HOST_NAME) remembered.name else target.name
         return listOf(ReconnectAction.Connect(target.copy(name = safeHostName(displayName))))

@@ -25,11 +25,21 @@ class ReconnectCoordinatorTest {
 
     @Test fun `stale saved host is cleared when it is no longer bonded`() {
         val fixture = Fixture(remembered)
-        fixture.coordinator.onForeground(true, listOf(other))
 
         assertEquals(
             listOf(ReconnectAction.RememberedHostUnavailable("Office PC")),
-            fixture.coordinator.onRegistrationSucceeded(listOf(other))
+            fixture.coordinator.onForeground(true, listOf(other))
+        )
+        assertNull(fixture.store.host)
+    }
+
+    @Test fun `malformed saved address is cleared`() {
+        val malformed = RememberedHost("not-an-address", "Office PC")
+        val fixture = Fixture(malformed)
+
+        assertEquals(
+            listOf(ReconnectAction.RememberedHostUnavailable("Office PC")),
+            fixture.coordinator.onForeground(true, listOf(remembered))
         )
         assertNull(fixture.store.host)
     }
@@ -90,6 +100,18 @@ class ReconnectCoordinatorTest {
         )
     }
 
+    @Test fun `unavailable Bluetooth prerequisites cancel pending retry`() {
+        val fixture = Fixture(remembered)
+        fixture.connectRememberedHost()
+        fixture.coordinator.onConnected(remembered)
+        fixture.coordinator.onConnectionLost()
+
+        fixture.coordinator.onPrerequisitesUnavailable()
+
+        assertFalse(fixture.scheduler.hasPendingTask)
+        assertTrue(fixture.asyncActions.isEmpty())
+    }
+
     @Test fun `registration completing in background waits for foreground`() {
         val fixture = Fixture(remembered)
         fixture.coordinator.onForeground(true, listOf(remembered))
@@ -141,6 +163,7 @@ class ReconnectCoordinatorTest {
             listOf(ReconnectAction.RequestDiscoverability),
             fixture.coordinator.onRegistrationSucceeded(emptyList())
         )
+        assertTrue(fixture.coordinator.onRegistrationSucceeded(emptyList()).isEmpty())
     }
 
     private class Fixture(initialHost: RememberedHost? = null) {

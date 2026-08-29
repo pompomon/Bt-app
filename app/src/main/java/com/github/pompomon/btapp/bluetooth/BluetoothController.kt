@@ -117,6 +117,7 @@ class BluetoothController(
         val prerequisiteState = initialState()
         if (prerequisiteState != ConnectionState.Ready) {
             coordinator.onForeground(false, null)
+            coordinator.onPrerequisitesUnavailable()
             onStateChanged(prerequisiteState)
             return
         }
@@ -141,6 +142,7 @@ class BluetoothController(
     fun onPrerequisitesChanged() {
         val prerequisiteState = initialState()
         if (prerequisiteState != ConnectionState.Ready) {
+            coordinator.onPrerequisitesUnavailable()
             onStateChanged(prerequisiteState)
             return
         }
@@ -296,7 +298,7 @@ class BluetoothController(
                 return
             }
             BondedDeviceLookup.PermissionRequired -> {
-                coordinator.onConnectionRequestFailed()
+                coordinator.onConnectionBlocked()
                 onStateChanged(ConnectionState.PermissionRequired)
                 return
             }
@@ -316,7 +318,7 @@ class BluetoothController(
             hid.connect(device)
         } catch (exception: SecurityException) {
             connectionTarget = null
-            coordinator.onConnectionRequestFailed()
+            coordinator.onConnectionBlocked()
             Log.w(TAG, "Bluetooth reconnect rejected", exception)
             onStateChanged(ConnectionState.PermissionRequired)
             return
@@ -387,6 +389,7 @@ class BluetoothController(
     private fun retryReconnect() {
         val prerequisiteState = initialState()
         if (prerequisiteState != ConnectionState.Ready) {
+            coordinator.onPrerequisitesUnavailable()
             onStateChanged(prerequisiteState)
             return
         }
