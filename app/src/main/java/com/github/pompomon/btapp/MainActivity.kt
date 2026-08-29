@@ -16,12 +16,17 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.weight
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -32,17 +37,20 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.github.pompomon.btapp.bluetooth.ConnectionState
-import com.github.pompomon.btapp.input.HidModifier
 import com.github.pompomon.btapp.input.TouchpadGestureDetector
 import kotlinx.coroutines.flow.collect
 
@@ -105,7 +113,7 @@ private fun BtApp(
     requestPermissions: () -> Unit,
     requestDiscoverability: () -> Unit
 ) {
-    var keyboard by remember { mutableStateOf(false) }
+    var keyboard by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(viewModel) {
         viewModel.events.collect { event ->
             when (event) {
@@ -113,8 +121,28 @@ private fun BtApp(
             }
         }
     }
+
+    if (state is ConnectionState.Connected) {
+        ConnectedScreen(
+            state = state,
+            keyboard = keyboard,
+            selectTouchpad = { keyboard = false },
+            selectKeyboard = { keyboard = true },
+            viewModel = viewModel
+        )
+    } else {
+        SetupScreen(state, viewModel, requestPermissions)
+    }
+}
+
+@Composable
+private fun SetupScreen(
+    state: ConnectionState,
+    viewModel: ConnectionViewModel,
+    requestPermissions: () -> Unit
+) {
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
+        Modifier.fillMaxSize().safeDrawingPadding().verticalScroll(rememberScrollState()).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text("Bt-app", style = MaterialTheme.typography.headlineMedium)
@@ -154,23 +182,69 @@ private fun BtApp(
             ConnectionState.Unsupported -> Unit
             else -> Unit
         }
-        if (state is ConnectionState.Connected) {
-            Row(
-                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+        Text("Pair from your PC's Bluetooth settings. The last connected computer reconnects automatically while this app is open.")
+    }
+}
+
+@Composable
+private fun ConnectedScreen(
+    state: ConnectionState.Connected,
+    keyboard: Boolean,
+    selectTouchpad: () -> Unit,
+    selectKeyboard: () -> Unit,
+    viewModel: ConnectionViewModel
+) {
+    Column(
+        Modifier.fillMaxSize().safeDrawingPadding().padding(horizontal = 6.dp, vertical = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = statusText(state),
+                modifier = Modifier.weight(1f).padding(horizontal = 4.dp),
+                style = MaterialTheme.typography.labelMedium,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            ModeButton("Touchpad", selected = !keyboard, onClick = selectTouchpad)
+            ModeButton("Keyboard", selected = keyboard, onClick = selectKeyboard)
+            OutlinedButton(
+                onClick = viewModel::disconnect,
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
             ) {
-                if (keyboard) {
-                    OutlinedButton(onClick = { keyboard = false }) { Text("Touchpad") }
-                    Button(onClick = { keyboard = true }) { Text("Keyboard") }
-                } else {
-                    Button(onClick = { keyboard = false }) { Text("Touchpad") }
-                    OutlinedButton(onClick = { keyboard = true }) { Text("Keyboard") }
-                }
-                OutlinedButton(onClick = viewModel::disconnect) { Text("Disconnect") }
+                Text("Disconnect", maxLines = 1, softWrap = false)
             }
+        }
+        Box(Modifier.fillMaxWidth().weight(1f)) {
             if (keyboard) Keyboard(viewModel) else Touchpad(viewModel)
         }
-        Text("Pair from your PC's Bluetooth settings. The last connected computer reconnects automatically while this app is open.")
+    }
+}
+
+@Composable
+private fun ModeButton(label: String, selected: Boolean, onClick: () -> Unit) {
+    val modifier = Modifier.semantics { this.selected = selected }
+    val content: @Composable () -> Unit = {
+        Text(label, maxLines = 1, softWrap = false, style = MaterialTheme.typography.labelMedium)
+    }
+    if (selected) {
+        Button(
+            onClick = onClick,
+            modifier = modifier,
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+            content = { content() }
+        )
+    } else {
+        OutlinedButton(
+            onClick = onClick,
+            modifier = modifier,
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+            content = { content() }
+        )
     }
 }
 
@@ -181,9 +255,13 @@ private fun Touchpad(viewModel: ConnectionViewModel) {
         detector.tap(fingerCount)?.let(viewModel::pointer)
         viewModel.pointer(detector.cancel())
     }
-    Text("Touchpad: one-finger tap/drag to click/move; two-finger tap/drag to right-click/scroll.")
-    Column(
-        Modifier.fillMaxWidth().height(360.dp).background(MaterialTheme.colorScheme.surfaceVariant)
+
+    Row(
+        Modifier.fillMaxSize(),
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Box(
+            Modifier.weight(2f).fillMaxHeight().background(MaterialTheme.colorScheme.surfaceVariant)
             .semantics {
                 contentDescription = "Touchpad"
                 onClick("Left click") {
@@ -236,45 +314,140 @@ private fun Touchpad(viewModel: ConnectionViewModel) {
                     }
                 }
             }
-    ) {}
-    Row(
-        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+        )
+        Column(
+            Modifier.weight(1f).fillMaxHeight(),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(
+                "One-finger drag/tap: move/left click\nTwo-finger drag/tap: scroll/right click",
+                style = MaterialTheme.typography.labelSmall,
+                maxLines = 4,
+                overflow = TextOverflow.Ellipsis
+            )
+            Column(
+                Modifier.fillMaxWidth().weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Row(
+                    Modifier.fillMaxWidth().weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    TouchpadActionButton("Left click", { click(1) }, Modifier.weight(1f))
+                    TouchpadActionButton("Right click", { click(2) }, Modifier.weight(1f))
+                }
+                Row(
+                    Modifier.fillMaxWidth().weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    TouchpadActionButton(
+                        "Scroll up",
+                        { viewModel.pointer(detector.scroll(1f)) },
+                        Modifier.weight(1f)
+                    )
+                    TouchpadActionButton(
+                        "Scroll down",
+                        { viewModel.pointer(detector.scroll(-1f)) },
+                        Modifier.weight(1f)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TouchpadActionButton(
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    OutlinedButton(
+        onClick = onClick,
+        modifier = modifier.fillMaxHeight(),
+        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
     ) {
-        OutlinedButton(onClick = { click(1) }) { Text("Left click") }
-        OutlinedButton(onClick = { click(2) }) { Text("Right click") }
-        OutlinedButton(onClick = { viewModel.pointer(detector.scroll(1f)) }) { Text("Scroll up") }
-        OutlinedButton(onClick = { viewModel.pointer(detector.scroll(-1f)) }) { Text("Scroll down") }
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Clip
+        )
     }
 }
 
 @Composable
 private fun Keyboard(viewModel: ConnectionViewModel) {
     var modifiers by remember { mutableStateOf(0) }
-    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        listOf("CTRL" to HidModifier.CTRL, "SHIFT" to HidModifier.SHIFT, "ALT" to HidModifier.ALT, "META" to HidModifier.META).forEach { (label, modifier) ->
-            OutlinedButton(onClick = { modifiers = modifiers xor modifier }) { Text(if (modifiers and modifier != 0) "✓ $label" else label) }
-        }
-    }
-    listOf(
-        "1234567890".map(Char::toString),
-        "F1 F2 F3 F4 F5 F6 F7 F8 F9 F10 F11 F12".split(" ")
-    ).forEach { row ->
-        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            row.forEach { key ->
-                OutlinedButton(onClick = { viewModel.key(key, modifiers) }) { Text(key) }
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val compact = maxWidth < 700.dp || maxHeight < 300.dp
+        val horizontalSpacing = if (compact) 2.dp else 4.dp
+        val verticalSpacing = if (compact) 2.dp else 4.dp
+
+        Column(
+            Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(verticalSpacing)
+        ) {
+            KeyboardLayout.rows.forEach { row ->
+                Row(
+                    Modifier.fillMaxWidth().weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(horizontalSpacing)
+                ) {
+                    row.forEach { key ->
+                        val selected = key.modifier?.let { modifiers and it != 0 } ?: false
+                        KeyboardButton(
+                            key = key,
+                            selected = selected,
+                            compact = compact,
+                            modifier = Modifier.weight(key.weight).fillMaxHeight(),
+                            onClick = {
+                                key.modifier?.let { modifiers = modifiers xor it }
+                                    ?: key.command?.let { viewModel.key(it, modifiers) }
+                            }
+                        )
+                    }
+                }
             }
         }
     }
-    listOf("QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM").forEach { row ->
-        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            row.forEach { key -> OutlinedButton(onClick = { viewModel.key(key.toString(), modifiers) }) { Text(key.toString()) } }
-        }
+}
+
+@Composable
+private fun KeyboardButton(
+    key: KeyboardKey,
+    selected: Boolean,
+    compact: Boolean,
+    modifier: Modifier,
+    onClick: () -> Unit
+) {
+    val buttonModifier = modifier.semantics {
+        contentDescription = key.contentDescription
+        if (key.modifier != null) this.selected = selected
     }
-    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        listOf("ESC", "TAB", "SPACE", "ENTER", "BACKSPACE", "LEFT", "UP", "DOWN", "RIGHT").forEach { key ->
-            OutlinedButton(onClick = { viewModel.key(key, modifiers) }) { Text(key) }
-        }
+    val content: @Composable () -> Unit = {
+        Text(
+            key.label,
+            style = if (compact) MaterialTheme.typography.labelSmall else MaterialTheme.typography.labelMedium,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Clip
+        )
+    }
+    if (selected) {
+        Button(
+            onClick = onClick,
+            modifier = buttonModifier,
+            contentPadding = PaddingValues(horizontal = 2.dp, vertical = 0.dp),
+            content = { content() }
+        )
+    } else {
+        OutlinedButton(
+            onClick = onClick,
+            modifier = buttonModifier,
+            contentPadding = PaddingValues(horizontal = 2.dp, vertical = 0.dp),
+            content = { content() }
+        )
     }
 }
 
