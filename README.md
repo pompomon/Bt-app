@@ -28,9 +28,10 @@ Install Android SDK Platform 35 and JDK 17, then run:
 ./gradlew --no-daemon --no-build-cache --no-configuration-cache lint assembleDebug
 ```
 
-CI uses one Linux job and intentionally disables every Gradle/GitHub Actions
-cache because this repository has a strict Actions storage budget. It uploads
-no APKs or build artifacts.
+CI runs two Linux jobs: a validation job that executes the Gradle test and lint
+checks, and a build job that assembles the debug APK and uploads it as the
+`bt-app-debug` artifact. Gradle and GitHub Actions caching are intentionally
+disabled because this repository has a strict Actions storage budget.
 
 ## Pairing and use
 
