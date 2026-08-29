@@ -139,10 +139,10 @@ internal class ReconnectCoordinator(
 
     fun onConnectionRequestFailed(): ReconnectDisposition {
         connectionRequested = false
-        intent = Intent.Reconnect
         if (reconnectSuppressed || !foreground || hostStore.load() == null) {
             return ReconnectDisposition.Idle
         }
+        intent = Intent.Reconnect
         return scheduleRetry()
     }
 

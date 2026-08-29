@@ -139,6 +139,8 @@ class ReconnectCoordinatorTest {
 
         fixture.coordinator.onManualDisconnect()
 
+        assertEquals(ReconnectDisposition.Idle, fixture.coordinator.onConnectionRequestFailed())
+        assertTrue(fixture.coordinator.onForeground(true, listOf(remembered)).isEmpty())
         assertEquals(ReconnectDisposition.Idle, fixture.coordinator.onConnectionLost())
         assertEquals(remembered, fixture.store.host)
         assertFalse(fixture.scheduler.hasPendingTask)
