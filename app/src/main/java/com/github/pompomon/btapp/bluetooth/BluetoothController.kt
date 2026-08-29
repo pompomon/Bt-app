@@ -38,12 +38,14 @@ class BluetoothController(
     private var hidDevice: BluetoothHidDevice? = null
     private var host: BluetoothDevice? = null
     private var connectionTarget: BluetoothDevice? = null
+    private var connectedIdentityPending = false
     private var connectedDeviceName = DEFAULT_HOST_NAME
     private var profileRequestPending = false
     private var pendingRegistration = false
     private var appRegistered = false
     private var closed = false
     private val executor: Executor = context.mainExecutor
+    private val pairingWindowScheduler = HandlerReconnectScheduler()
     private val coordinator = ReconnectCoordinator(
         RememberedHostPreferences(context),
         HandlerReconnectScheduler(),
@@ -68,6 +70,7 @@ class BluetoothController(
             } else {
                 host = null
                 connectionTarget = null
+                connectedIdentityPending = false
                 connectedDeviceName = DEFAULT_HOST_NAME
                 coordinator.onRegistrationLost()
                 if (registrationWasPending) {
@@ -128,7 +131,7 @@ class BluetoothController(
     }
 
     fun onBackground() {
-        if (coordinator.onBackground()) {
+        if (coordinator.onBackground() || connectedIdentityPending) {
             connectionTarget?.let { disconnectDevice(it, releaseReports = false) }
         }
     }
@@ -144,8 +147,32 @@ class BluetoothController(
             onStateChanged(prerequisiteState)
             return
         }
+        if (connectedIdentityPending) {
+            val pendingDevice = connectionTarget
+            connectedIdentityPending = false
+            if (pendingDevice != null) {
+                handleConnected(pendingDevice)
+                return
+            }
+        }
         val bondedHosts = bondedHosts()
         val actions = coordinator.onPrerequisitesAvailable(bondedHosts)
+        if (bondedHosts != null && actions.isEmpty()) showStableState()
+        executeActions(actions)
+    }
+
+    fun onDiscoverabilityResult(durationSeconds: Int) {
+        pairingWindowScheduler.cancel()
+        if (durationSeconds > 0) {
+            pairingWindowScheduler.schedule(durationSeconds * 1_000L, ::closePairingWindow)
+        } else {
+            closePairingWindow()
+        }
+    }
+
+    private fun closePairingWindow() {
+        val bondedHosts = if (initialState() == ConnectionState.Ready) bondedHosts() else null
+        val actions = coordinator.onPairingWindowClosed(bondedHosts)
         if (bondedHosts != null && actions.isEmpty()) showStableState()
         executeActions(actions)
     }
@@ -247,6 +274,7 @@ class BluetoothController(
             hidDevice = null
             host = null
             connectionTarget = null
+            connectedIdentityPending = false
             coordinator.onRegistrationLost()
             if (!closed) {
                 val disposition = coordinator.onConnectionLost()
@@ -331,9 +359,16 @@ class BluetoothController(
     }
 
     private fun handleConnected(device: BluetoothDevice) {
-        val identity = deviceIdentity(device) ?: return
+        val identity = deviceIdentity(device) ?: run {
+            connectionTarget = device
+            connectedIdentityPending = true
+            coordinator.onConnectionBlocked()
+            return
+        }
+        connectedIdentityPending = false
         when (coordinator.onConnected(identity)) {
             ConnectionDecision.Accept -> {
+                pairingWindowScheduler.cancel()
                 host = device
                 connectionTarget = null
                 connectedDeviceName = identity.name
@@ -356,6 +391,7 @@ class BluetoothController(
         val name = deviceName(device, connectedDeviceName)
         host = null
         connectionTarget = null
+        connectedIdentityPending = false
         connectedDeviceName = DEFAULT_HOST_NAME
         when (coordinator.onConnectionLost()) {
             ReconnectDisposition.RetryScheduled ->
@@ -461,12 +497,14 @@ class BluetoothController(
 
     private fun clearFailedConnectionTarget() {
         connectionTarget = null
+        connectedIdentityPending = false
         coordinator.onConnectionBlocked()
     }
 
     fun close() {
         if (closed) return
         closed = true
+        pairingWindowScheduler.cancel()
         coordinator.onBackground()
         coordinator.onManualDisconnect()
         profileRequestPending = false
@@ -491,6 +529,7 @@ class BluetoothController(
         hidDevice = null
         host = null
         connectionTarget = null
+        connectedIdentityPending = false
     }
 
     private fun releaseInputs(device: BluetoothHidDevice, target: BluetoothDevice) {
@@ -519,10 +558,11 @@ class BluetoothController(
     private fun findBondedDevice(address: String): BondedDeviceLookup {
         val normalizedAddress = normalizeBluetoothAddress(address) ?: return BondedDeviceLookup.Missing
         val devices = bondedDevices() ?: return BondedDeviceLookup.PermissionRequired
-        val device = devices.firstOrNull {
-            deviceAddress(it) == normalizedAddress
+        for (device in devices) {
+            val deviceAddress = deviceAddress(device) ?: return BondedDeviceLookup.PermissionRequired
+            if (deviceAddress == normalizedAddress) return BondedDeviceLookup.Found(device)
         }
-        return device?.let(BondedDeviceLookup::Found) ?: BondedDeviceLookup.Missing
+        return BondedDeviceLookup.Missing
     }
 
     private fun bondedDevices(): Set<BluetoothDevice>? =

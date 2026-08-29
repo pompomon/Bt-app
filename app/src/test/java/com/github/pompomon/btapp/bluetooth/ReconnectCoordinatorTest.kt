@@ -219,6 +219,29 @@ class ReconnectCoordinatorTest {
         assertEquals(other, fixture.store.host)
     }
 
+    @Test fun `cancelled pairing window rejects later host connections`() {
+        val fixture = Fixture()
+        fixture.coordinator.onForeground(true, emptyList())
+        fixture.coordinator.onPairRequested(true)
+        fixture.coordinator.onRegistrationSucceeded(emptyList())
+
+        assertTrue(fixture.coordinator.onPairingWindowClosed(emptyList()).isEmpty())
+        assertEquals(ConnectionDecision.Disconnect, fixture.coordinator.onConnected(other))
+        assertNull(fixture.store.host)
+    }
+
+    @Test fun `closed pairing window resumes reconnecting remembered host`() {
+        val fixture = Fixture(remembered)
+        fixture.coordinator.onForeground(true, listOf(remembered))
+        fixture.coordinator.onPairRequested(true)
+        fixture.coordinator.onRegistrationSucceeded(listOf(remembered))
+
+        assertEquals(
+            listOf(ReconnectAction.Connect(remembered)),
+            fixture.coordinator.onPairingWindowClosed(listOf(remembered))
+        )
+    }
+
     private class Fixture(initialHost: RememberedHost? = null) {
         val store = FakeStore(initialHost)
         val scheduler = FakeScheduler()

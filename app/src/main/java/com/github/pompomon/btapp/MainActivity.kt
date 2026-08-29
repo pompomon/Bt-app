@@ -51,7 +51,9 @@ class MainActivity : ComponentActivity() {
     private val permissionLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         viewModel.onPrerequisitesChanged()
     }
-    private val discoverableLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {}
+    private val discoverableLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        viewModel.onDiscoverabilityResult(it.resultCode)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -90,6 +92,7 @@ class MainActivity : ComponentActivity() {
             )
         } catch (exception: SecurityException) {
             Log.w("MainActivity", "Bluetooth discoverability request rejected", exception)
+            viewModel.onDiscoverabilityResult(0)
             viewModel.onPrerequisitesChanged()
         }
     }

@@ -93,6 +93,13 @@ internal class ReconnectCoordinator(
         return if (prerequisitesAvailable) advance(emptyList()) else emptyList()
     }
 
+    fun onPairingWindowClosed(bondedHosts: Collection<RememberedHost>?): List<ReconnectAction> {
+        if (intent != Intent.AwaitingPair) return emptyList()
+        reconnectSuppressed = false
+        intent = if (hostStore.load() == null) Intent.None else Intent.Reconnect
+        return advance(bondedHosts)
+    }
+
     fun onManualReconnect(
         prerequisitesAvailable: Boolean,
         bondedHosts: Collection<RememberedHost>?

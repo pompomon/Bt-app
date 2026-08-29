@@ -37,6 +37,7 @@ class ConnectionViewModel(application: Application) : AndroidViewModel(applicati
     fun onBackground() = controller.onBackground()
     fun prepareForPermissionRequest() = controller.prepareForPermissionRequest()
     fun onPrerequisitesChanged() = controller.onPrerequisitesChanged()
+    fun onDiscoverabilityResult(durationSeconds: Int) = controller.onDiscoverabilityResult(durationSeconds)
     fun pairNewDevice() = controller.pairNewDevice()
     fun reconnect() = controller.reconnect()
     fun disconnect() = controller.disconnect()
