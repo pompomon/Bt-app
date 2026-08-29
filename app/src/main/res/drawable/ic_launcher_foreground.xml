@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M18,20h72v68H18z"/>
+ 
+    <path
+        android:fillColor="@color/ic_launcher_background"
+        android:pathData="M22,24h66v60H22z"/>
+ 
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M24,34h8v8H24z"/>
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M38,34h8v8H38z"/>
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M52,34h8v8H52z"/>
+    <path
+        android:fillColor="@color/ic_launcher_accent"
+        android:pathData="M66,34h8v8H66z"/>
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M78,34h8v8H78z"/>
+ 
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M24,46h8v8H24z"/>
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M38,46h8v8H38z"/>
+    <path
+        android:fillColor="@color/ic_launcher_accent"
+        android:pathData="M52,46h8v8H52z"/>
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M66,46h8v8H66z"/>
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M78,46h8v8H78z"/>
+ 
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M24,58h8v8H24z"/>
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M38,58h8v8H38z"/>
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M52,58h8v8H52z"/>
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M66,58h8v8H66z"/>
+    <path
+        android:fillColor="@color/ic_launcher_accent"
+        android:pathData="M78,58h8v8H78z"/>
+ 
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M30,68h48v8H30z"/>
+    <path
+        android:fillColor="@color/ic_launcher_accent"
+        android:pathData="M78,68h8v8H78z"/>
+</vector>
