@@ -27,7 +27,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
-import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Button
@@ -37,6 +36,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -387,13 +387,14 @@ private fun Keyboard(viewModel: ConnectionViewModel) {
         val compact = maxWidth < 700.dp || maxHeight < 300.dp
         val spacing = if (compact) 2.dp else 4.dp
         val rowHeight = 48.dp
+        val keyboardWidth = maxWidth
 
         Column(
             Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = spacing),
             verticalArrangement = Arrangement.spacedBy(spacing)
         ) {
             KeyboardLayout.rows.forEachIndexed { rowIndex, row ->
-                val availableKeyWidth = maxWidth - 2 * spacing - spacing * (row.size - 1)
+                val availableKeyWidth = keyboardWidth - 2 * spacing - spacing * (row.size - 1)
                 val totalWeight = row.sumOf { it.weight.toDouble() }.toFloat()
                 val minRowWidth = row.fold(0.dp) { width, key ->
                     width + maxOf(48.dp, availableKeyWidth * key.weight / totalWeight)
