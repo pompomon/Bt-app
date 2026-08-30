@@ -394,7 +394,7 @@ private fun Keyboard(viewModel: ConnectionViewModel) {
             verticalArrangement = Arrangement.spacedBy(spacing)
         ) {
             KeyboardLayout.rows.forEachIndexed { rowIndex, row ->
-                val availableKeyWidth = keyboardWidth - 2 * spacing - spacing * (row.size - 1)
+                val availableKeyWidth = keyboardWidth - spacing * 2 - spacing * (row.size - 1)
                 val totalWeight = row.sumOf { it.weight.toDouble() }.toFloat()
                 val minRowWidth = row.fold(0.dp) { width, key ->
                     width + maxOf(48.dp, availableKeyWidth * key.weight / totalWeight)
