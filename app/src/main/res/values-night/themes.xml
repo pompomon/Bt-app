@@ -1,4 +1,3 @@
 <resources>
     <style name="Theme.BtApp" parent="Theme.Material3.DayNight.NoActionBar" />
 </resources>
-
