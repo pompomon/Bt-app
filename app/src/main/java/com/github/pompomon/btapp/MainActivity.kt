@@ -6,13 +6,15 @@ import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -29,11 +31,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -58,7 +61,7 @@ import com.github.pompomon.btapp.bluetooth.ConnectionState
 import com.github.pompomon.btapp.input.TouchpadGestureDetector
 import kotlinx.coroutines.flow.collect
 
-class MainActivity : ComponentActivity() {
+class MainActivity : AppCompatActivity() {
     private val viewModel by viewModels<ConnectionViewModel>()
     private val themePreferences by lazy { ThemePreferences(this) }
     private val permissionLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
@@ -72,9 +75,14 @@ class MainActivity : ComponentActivity() {
         AppCompatDelegate.setDefaultNightMode(themePreferences.load().toNightMode())
         super.onCreate(savedInstanceState)
         setContent {
-            MaterialTheme {
-                val state by viewModel.state.collectAsStateWithLifecycle()
-                val currentTheme = remember { mutableStateOf(themePreferences.load()) }
+            val state by viewModel.state.collectAsStateWithLifecycle()
+            val currentTheme = remember { mutableStateOf(themePreferences.load()) }
+            val darkTheme = when (currentTheme.value) {
+                ThemePreferences.ThemeMode.SYSTEM -> isSystemInDarkTheme()
+                ThemePreferences.ThemeMode.LIGHT -> false
+                ThemePreferences.ThemeMode.DARK -> true
+            }
+            MaterialTheme(colorScheme = if (darkTheme) darkColorScheme() else lightColorScheme()) {
                 BtApp(
                     state = state,
                     viewModel = viewModel,
