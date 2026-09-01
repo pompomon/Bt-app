@@ -73,11 +73,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        AppCompatDelegate.setDefaultNightMode(themePreferences.load().toNightMode())
         super.onCreate(savedInstanceState)
+        val initialTheme = ThemePreferences(this).load()
+        AppCompatDelegate.setDefaultNightMode(initialTheme.toNightMode())
         setContent {
             val state by viewModel.state.collectAsStateWithLifecycle()
-            val currentTheme = remember { mutableStateOf(themePreferences.load()) }
+            val currentTheme = remember { mutableStateOf(initialTheme) }
             val darkTheme = when (currentTheme.value) {
                 ThemePreferences.ThemeMode.SYSTEM -> isSystemInDarkTheme()
                 ThemePreferences.ThemeMode.LIGHT -> false
@@ -295,18 +296,23 @@ private fun ThemeSelectionButton(
     onClick: () -> Unit
 ) {
     val modifier = Modifier.semantics { this.selected = selected }
+    val content: @Composable () -> Unit = {
+        Text(label, maxLines = 1, softWrap = false, style = MaterialTheme.typography.labelMedium)
+    }
     if (selected) {
         Button(
             onClick = onClick,
             modifier = modifier,
-            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
-        ) { Text(label, maxLines = 1, softWrap = false, style = MaterialTheme.typography.labelMedium) }
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+            content = { content() }
+        )
     } else {
         OutlinedButton(
             onClick = onClick,
             modifier = modifier,
-            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
-        ) { Text(label, maxLines = 1, softWrap = false, style = MaterialTheme.typography.labelMedium) }
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+            content = { content() }
+        )
     }
 }
 
