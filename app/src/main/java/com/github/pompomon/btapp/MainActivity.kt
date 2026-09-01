@@ -73,9 +73,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
         val initialTheme = ThemePreferences(this).load()
         AppCompatDelegate.setDefaultNightMode(initialTheme.toNightMode())
+        super.onCreate(savedInstanceState)
         setContent {
             val state by viewModel.state.collectAsStateWithLifecycle()
             val currentTheme = remember { mutableStateOf(initialTheme) }
