@@ -34,6 +34,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -83,18 +84,24 @@ class MainActivity : AppCompatActivity() {
                 ThemePreferences.ThemeMode.DARK -> true
             }
             MaterialTheme(colorScheme = if (darkTheme) darkColorScheme() else lightColorScheme()) {
-                BtApp(
-                    state = state,
-                    viewModel = viewModel,
-                    requestPermissions = ::requestBluetoothPermissions,
-                    requestDiscoverability = ::requestDiscoverability,
-                    themeMode = currentTheme.value,
-                    onThemeModeChanged = { mode ->
-                        currentTheme.value = mode
-                        themePreferences.save(mode)
-                        AppCompatDelegate.setDefaultNightMode(mode.toNightMode())
-                    }
-                )
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background,
+                    contentColor = MaterialTheme.colorScheme.onBackground
+                ) {
+                    BtApp(
+                        state = state,
+                        viewModel = viewModel,
+                        requestPermissions = ::requestBluetoothPermissions,
+                        requestDiscoverability = ::requestDiscoverability,
+                        themeMode = currentTheme.value,
+                        onThemeModeChanged = { mode ->
+                            currentTheme.value = mode
+                            themePreferences.save(mode)
+                            AppCompatDelegate.setDefaultNightMode(mode.toNightMode())
+                        }
+                    )
+                }
             }
         }
     }
