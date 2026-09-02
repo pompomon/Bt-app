@@ -23,6 +23,7 @@ sealed interface ConnectionState {
     data object Ready : ConnectionState
     data object Registering : ConnectionState
     data class Registered(val rememberedDeviceName: String? = null) : ConnectionState
+    data class CheckingConnection(val deviceName: String) : ConnectionState
     data class Reconnecting(val deviceName: String) : ConnectionState
     data class Disconnecting(val deviceName: String) : ConnectionState
     data class ReconnectFailed(val deviceName: String, val message: String) : ConnectionState
@@ -41,6 +42,7 @@ class BluetoothController(
     private var connectionTarget: BluetoothDevice? = null
     private var connectedIdentityPending = false
     private var connectedDeviceName = DEFAULT_HOST_NAME
+    private var connectionConfirmed = false
     private var profileRequestPending = false
     private var pendingRegistration = false
     private var appRegistered = false
@@ -73,6 +75,7 @@ class BluetoothController(
                 connectionTarget = null
                 connectedIdentityPending = false
                 connectedDeviceName = DEFAULT_HOST_NAME
+                connectionConfirmed = false
                 coordinator.onRegistrationLost()
                 if (registrationWasPending) {
                     showRegistrationFailure("Could not register the Bluetooth HID device.")
@@ -92,12 +95,15 @@ class BluetoothController(
             if (closed) return
             when (state) {
                 BluetoothProfile.STATE_CONNECTING -> {
+                    host = null
                     connectionTarget = device
+                    connectionConfirmed = false
                     coordinator.onConnectionRequested()
                     onStateChanged(ConnectionState.Reconnecting(deviceName(device)))
                 }
                 BluetoothProfile.STATE_CONNECTED -> handleConnected(device)
                 BluetoothProfile.STATE_DISCONNECTING -> {
+                    connectionConfirmed = false
                     onStateChanged(ConnectionState.Disconnecting(deviceName(device)))
                 }
                 BluetoothProfile.STATE_DISCONNECTED -> handleDisconnected(device)
@@ -127,11 +133,19 @@ class BluetoothController(
         }
         val bondedHosts = bondedHosts()
         val actions = coordinator.onForeground(bondedHosts != null, bondedHosts)
+        host?.let {
+            refreshConnectionState(it)
+            return
+        }
         if (bondedHosts != null && actions.isEmpty()) showStableState()
         executeActions(actions)
     }
 
     fun onBackground() {
+        host?.let {
+            connectionConfirmed = false
+            onStateChanged(ConnectionState.CheckingConnection(connectedDeviceName))
+        }
         if (coordinator.onBackground() || connectedIdentityPending) {
             connectionTarget?.let { disconnectDevice(it, releaseReports = false) }
         }
@@ -155,6 +169,10 @@ class BluetoothController(
                 handleConnected(pendingDevice)
                 return
             }
+        }
+        host?.let {
+            refreshConnectionState(it)
+            return
         }
         val bondedHosts = bondedHosts()
         val actions = coordinator.onPrerequisitesAvailable(bondedHosts)
@@ -276,6 +294,7 @@ class BluetoothController(
             host = null
             connectionTarget = null
             connectedIdentityPending = false
+            connectionConfirmed = false
             coordinator.onRegistrationLost()
             if (!closed) {
                 val disposition = coordinator.onConnectionLost()
@@ -340,6 +359,7 @@ class BluetoothController(
         }
 
         connectionTarget = device
+        connectionConfirmed = false
         val name = deviceName(device, rememberedHost.name)
         connectedDeviceName = name
         onStateChanged(ConnectionState.Reconnecting(name))
@@ -373,13 +393,52 @@ class BluetoothController(
                 host = device
                 connectionTarget = null
                 connectedDeviceName = identity.name
+                connectionConfirmed = true
                 onStateChanged(ConnectionState.Connected(connectedDeviceName))
             }
             ConnectionDecision.Disconnect -> {
                 host = null
                 connectionTarget = device
+                connectionConfirmed = false
                 disconnectDevice(device, releaseReports = false)
             }
+        }
+    }
+
+    private fun refreshConnectionState(device: BluetoothDevice, showCheckingState: Boolean = true) {
+        connectionConfirmed = false
+        if (showCheckingState) {
+            onStateChanged(ConnectionState.CheckingConnection(deviceName(device, connectedDeviceName)))
+        }
+        val hid = hidDevice
+        if (!appRegistered || hid == null) {
+            appRegistered = false
+            coordinator.onRegistrationLost()
+            handleDisconnected(device)
+            return
+        }
+        val state = try {
+            hid.getConnectionState(device)
+        } catch (exception: SecurityException) {
+            coordinator.onConnectionBlocked()
+            Log.w(TAG, "Bluetooth connection status access rejected", exception)
+            onStateChanged(ConnectionState.PermissionRequired)
+            return
+        }
+        when (state) {
+            BluetoothProfile.STATE_CONNECTED -> handleConnected(device)
+            BluetoothProfile.STATE_CONNECTING -> {
+                host = null
+                connectionTarget = device
+                coordinator.onConnectionRequested()
+                onStateChanged(ConnectionState.Reconnecting(deviceName(device, connectedDeviceName)))
+            }
+            BluetoothProfile.STATE_DISCONNECTING -> {
+                host = null
+                connectionTarget = device
+                onStateChanged(ConnectionState.Disconnecting(deviceName(device, connectedDeviceName)))
+            }
+            else -> handleDisconnected(device)
         }
     }
 
@@ -394,6 +453,7 @@ class BluetoothController(
         connectionTarget = null
         connectedIdentityPending = false
         connectedDeviceName = DEFAULT_HOST_NAME
+        connectionConfirmed = false
         when (coordinator.onConnectionLost()) {
             ReconnectDisposition.RetryScheduled ->
                 onStateChanged(ConnectionState.ReconnectFailed(name, "Connection lost. Retrying…"))
@@ -446,9 +506,14 @@ class BluetoothController(
             showStableState()
             return false
         }
+        if (!connectionConfirmed) {
+            showStableState()
+            return false
+        }
         val sent = try {
             hidDevice?.sendReport(target, reportId, report.copyOfRange(1, report.size)) == true
         } catch (exception: SecurityException) {
+            connectionConfirmed = false
             Log.w(TAG, "Bluetooth report rejected", exception)
             onStateChanged(ConnectionState.PermissionRequired)
             return false
@@ -456,7 +521,13 @@ class BluetoothController(
         if (sent) {
             onStateChanged(ConnectionState.Connected(connectedDeviceName))
         } else {
+            connectionConfirmed = false
             showConnectionError("Could not send the HID report.")
+            executor.execute {
+                if (!closed && host == target) {
+                    refreshConnectionState(target, showCheckingState = false)
+                }
+            }
         }
         return sent
     }
@@ -487,6 +558,7 @@ class BluetoothController(
             return
         }
         if (requested) {
+            connectionConfirmed = false
             onStateChanged(ConnectionState.Disconnecting(name))
         } else if (host != null) {
             showConnectionError("Could not disconnect from the Bluetooth host.")
@@ -531,6 +603,7 @@ class BluetoothController(
         host = null
         connectionTarget = null
         connectedIdentityPending = false
+        connectionConfirmed = false
     }
 
     @SuppressLint("MissingPermission")
@@ -600,7 +673,8 @@ class BluetoothController(
 
     private fun showStableState() {
         when {
-            host != null -> onStateChanged(ConnectionState.Connected(connectedDeviceName))
+            host != null && connectionConfirmed -> onStateChanged(ConnectionState.Connected(connectedDeviceName))
+            host != null -> onStateChanged(ConnectionState.CheckingConnection(connectedDeviceName))
             connectionTarget != null -> onStateChanged(ConnectionState.Reconnecting(connectedDeviceName))
             pendingRegistration || profileRequestPending -> onStateChanged(ConnectionState.Registering)
             appRegistered -> onStateChanged(
