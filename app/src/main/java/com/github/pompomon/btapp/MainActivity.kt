@@ -303,69 +303,65 @@ private fun Touchpad(viewModel: ConnectionViewModel, enabled: Boolean) {
         Modifier.fillMaxSize(),
         horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        val interactionModifier = if (enabled) {
-            Modifier
-                .semantics {
-                    contentDescription = "Touchpad"
+        Box(
+            Modifier.weight(2f).fillMaxHeight().background(MaterialTheme.colorScheme.surfaceVariant)
+            .semantics {
+                contentDescription = "Touchpad"
+                if (enabled) {
                     onClick("Left click") {
                         click(1)
                         true
                     }
+                } else {
+                    disabled()
                 }
-                .pointerInput(detector, viewModel) {
-                    awaitEachGesture {
-                        var accumulatedDelta = Offset.Zero
-                        var dragStarted = false
-                        var maxFingerCount = 0
-                        var previousFingerCount = 0
-                        var pointersDown: Boolean
-                        try {
-                            do {
-                                val pointerEvent = awaitPointerEvent()
-                                val fingerCount = pointerEvent.changes.count { it.pressed }
-                                pointersDown = fingerCount > 0
-                                maxFingerCount = maxOf(maxFingerCount, fingerCount)
-                                if (fingerCount != previousFingerCount) {
-                                    accumulatedDelta = Offset.Zero
-                                    previousFingerCount = fingerCount
-                                }
-                                if (pointerEvent.changes.any { it.isConsumed }) {
-                                    dragStarted = true
-                                    continue
-                                }
-                                if (maxFingerCount > fingerCount && fingerCount > 0) {
-                                    pointerEvent.changes.filter { it.pressed }.forEach { it.consume() }
-                                    continue
-                                }
-                                val changes = pointerEvent.changes.filter { it.pressed && it.previousPressed }
-                                if (fingerCount !in 1..2 || changes.isEmpty()) continue
-                                val delta = Offset(
-                                    changes.sumOf { it.positionChange().x.toDouble() }.toFloat() / changes.size,
-                                    changes.sumOf { it.positionChange().y.toDouble() }.toFloat() / changes.size
-                                )
-                                accumulatedDelta += delta
-                                if (!dragStarted && accumulatedDelta.getDistance() <= viewConfiguration.touchSlop) continue
-                                val dragDelta = if (dragStarted) delta else accumulatedDelta
-                                dragStarted = true
+            }
+            .pointerInput(detector, viewModel, enabled) {
+                if (!enabled) return@pointerInput
+                awaitEachGesture {
+                    var accumulatedDelta = Offset.Zero
+                    var dragStarted = false
+                    var maxFingerCount = 0
+                    var previousFingerCount = 0
+                    var pointersDown: Boolean
+                    try {
+                        do {
+                            val pointerEvent = awaitPointerEvent()
+                            val fingerCount = pointerEvent.changes.count { it.pressed }
+                            pointersDown = fingerCount > 0
+                            maxFingerCount = maxOf(maxFingerCount, fingerCount)
+                            if (fingerCount != previousFingerCount) {
                                 accumulatedDelta = Offset.Zero
-                                detector.drag(fingerCount, dragDelta.x, dragDelta.y)?.let(viewModel::pointer)
-                                changes.forEach { it.consume() }
-                            } while (pointersDown)
-                            if (!dragStarted) detector.tap(maxFingerCount)?.let(viewModel::pointer)
-                        } finally {
-                            viewModel.pointer(detector.cancel())
-                        }
+                                previousFingerCount = fingerCount
+                            }
+                            if (pointerEvent.changes.any { it.isConsumed }) {
+                                dragStarted = true
+                                continue
+                            }
+                            if (maxFingerCount > fingerCount && fingerCount > 0) {
+                                pointerEvent.changes.filter { it.pressed }.forEach { it.consume() }
+                                continue
+                            }
+                            val changes = pointerEvent.changes.filter { it.pressed && it.previousPressed }
+                            if (fingerCount !in 1..2 || changes.isEmpty()) continue
+                            val delta = Offset(
+                                changes.sumOf { it.positionChange().x.toDouble() }.toFloat() / changes.size,
+                                changes.sumOf { it.positionChange().y.toDouble() }.toFloat() / changes.size
+                            )
+                            accumulatedDelta += delta
+                            if (!dragStarted && accumulatedDelta.getDistance() <= viewConfiguration.touchSlop) continue
+                            val dragDelta = if (dragStarted) delta else accumulatedDelta
+                            dragStarted = true
+                            accumulatedDelta = Offset.Zero
+                            detector.drag(fingerCount, dragDelta.x, dragDelta.y)?.let(viewModel::pointer)
+                            changes.forEach { it.consume() }
+                        } while (pointersDown)
+                        if (!dragStarted) detector.tap(maxFingerCount)?.let(viewModel::pointer)
+                    } finally {
+                        viewModel.pointer(detector.cancel())
                     }
                 }
-        } else {
-            Modifier.semantics {
-                contentDescription = "Touchpad"
-                disabled()
             }
-        }
-        Box(
-            Modifier.weight(2f).fillMaxHeight().background(MaterialTheme.colorScheme.surfaceVariant)
-                .then(interactionModifier)
         )
         Column(
             Modifier.weight(1f).fillMaxHeight(),
