@@ -50,6 +50,7 @@ class BluetoothController(
     private var profileRequestPending = false
     private var pendingRegistration = false
     private var appRegistered = false
+    private var foreground = false
     private var closed = false
     private val executor: Executor = context.mainExecutor
     private val pairingWindowScheduler = HandlerReconnectScheduler()
@@ -131,6 +132,7 @@ class BluetoothController(
     }
 
     fun onForeground() {
+        foreground = true
         val prerequisiteState = initialState()
         if (prerequisiteState != ConnectionState.Ready) {
             coordinator.onForeground(false, null)
@@ -149,6 +151,7 @@ class BluetoothController(
     }
 
     fun onBackground() {
+        foreground = false
         host?.let {
             connectionConfirmed = false
             onStateChanged(ConnectionState.CheckingConnection(connectedDeviceName))
@@ -178,7 +181,7 @@ class BluetoothController(
             }
         }
         host?.let {
-            refreshConnectionState(it)
+            if (foreground) refreshConnectionState(it)
             return
         }
         val bondedHosts = bondedHosts()
@@ -543,7 +546,7 @@ class BluetoothController(
             connectionConfirmed = false
             showConnectionError("Could not send the HID report.")
             executor.execute {
-                if (!closed && host == target) {
+                if (!closed && foreground && host == target) {
                     refreshConnectionState(target, showCheckingState = false)
                 }
             }
@@ -596,6 +599,7 @@ class BluetoothController(
     fun close() {
         if (closed) return
         closed = true
+        foreground = false
         pairingWindowScheduler.cancel()
         coordinator.onBackground()
         coordinator.onManualDisconnect()
