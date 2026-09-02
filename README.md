@@ -51,6 +51,13 @@ to the available space with click and scroll controls beside it, while the
 keyboard arranges every key in six rows and scrolls on smaller viewports to
 preserve accessible key targets.
 
+The header shows the current connection state with text and a color-independent
+marker: a steady marker means connected or idle, a spinner means the app is
+checking or changing the connection, and a red marker reports a failure. After
+the app returns from the background, it checks Android's HID connection state
+before enabling keyboard and touchpad input. The selected input remains visible
+but dimmed while that check or an automatic reconnect is in progress.
+
 The app remembers the last computer that successfully established an HID
 connection. On later launches it registers the HID profile and reconnects to
 that computer automatically, with up to three delayed retries after an
@@ -63,6 +70,11 @@ device** to make the phone discoverable for a different computer, or **Forget
 device** to remove the saved computer. If the saved computer is no longer
 bonded in Android settings, the app removes the stale saved entry and asks you
 to pair again.
+
+The indicator reflects the Bluetooth HID state reported by Android. The HID
+protocol does not provide this app with confirmation that the computer processed
+an individual key or pointer report, so a connected indicator cannot guarantee
+delivery of each input event.
 
 If it cannot register, verify Bluetooth is enabled, re-grant Nearby devices
 permission, and check whether the phone supports the HID Device profile. Remove

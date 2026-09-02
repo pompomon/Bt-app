@@ -100,6 +100,33 @@ class ReconnectCoordinatorTest {
         )
     }
 
+    @Test fun `foreground validation can confirm an existing connection without reconnecting`() {
+        val fixture = Fixture(remembered)
+        fixture.connectRememberedHost()
+        fixture.coordinator.onConnected(remembered)
+        fixture.coordinator.onBackground()
+
+        assertTrue(fixture.coordinator.onForeground(true, listOf(remembered)).isEmpty())
+        assertEquals(ConnectionDecision.Accept, fixture.coordinator.onConnected(remembered))
+        assertFalse(fixture.scheduler.hasPendingTask)
+    }
+
+    @Test fun `failed foreground validation enters the existing retry flow`() {
+        val fixture = Fixture(remembered)
+        fixture.connectRememberedHost()
+        fixture.coordinator.onConnected(remembered)
+        fixture.coordinator.onBackground()
+        fixture.coordinator.onForeground(true, listOf(remembered))
+
+        assertEquals(ReconnectDisposition.RetryScheduled, fixture.coordinator.onConnectionLost())
+        fixture.scheduler.runPending()
+        assertEquals(listOf(ReconnectAction.Retry), fixture.asyncActions.single())
+        assertEquals(
+            listOf(ReconnectAction.Connect(remembered)),
+            fixture.coordinator.onRetry(true, listOf(remembered))
+        )
+    }
+
     @Test fun `backgrounding cancels an in-flight automatic reconnect`() {
         val fixture = Fixture(remembered)
         fixture.connectRememberedHost()
