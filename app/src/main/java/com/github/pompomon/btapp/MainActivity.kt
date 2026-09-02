@@ -6,15 +6,17 @@ import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
-import androidx.compose.foundation.shape.CircleShape
+import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -35,7 +37,10 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -66,8 +71,9 @@ import com.github.pompomon.btapp.bluetooth.ConnectionState
 import com.github.pompomon.btapp.input.TouchpadGestureDetector
 import kotlinx.coroutines.flow.collect
 
-class MainActivity : ComponentActivity() {
+class MainActivity : AppCompatActivity() {
     private val viewModel by viewModels<ConnectionViewModel>()
+    private val themePreferences by lazy { ThemePreferences(this) }
     private val permissionLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         viewModel.onPrerequisitesChanged()
     }
@@ -76,11 +82,36 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        val initialTheme = ThemePreferences(this).load()
+        AppCompatDelegate.setDefaultNightMode(initialTheme.toNightMode())
         super.onCreate(savedInstanceState)
         setContent {
-            MaterialTheme {
-                val state by viewModel.state.collectAsStateWithLifecycle()
-                BtApp(state, viewModel, ::requestBluetoothPermissions, ::requestDiscoverability)
+            val state by viewModel.state.collectAsStateWithLifecycle()
+            val currentTheme = remember { mutableStateOf(initialTheme) }
+            val darkTheme = when (currentTheme.value) {
+                ThemePreferences.ThemeMode.SYSTEM -> isSystemInDarkTheme()
+                ThemePreferences.ThemeMode.LIGHT -> false
+                ThemePreferences.ThemeMode.DARK -> true
+            }
+            MaterialTheme(colorScheme = if (darkTheme) darkColorScheme() else lightColorScheme()) {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background,
+                    contentColor = MaterialTheme.colorScheme.onBackground
+                ) {
+                    BtApp(
+                        state = state,
+                        viewModel = viewModel,
+                        requestPermissions = ::requestBluetoothPermissions,
+                        requestDiscoverability = ::requestDiscoverability,
+                        themeMode = currentTheme.value,
+                        onThemeModeChanged = { mode ->
+                            currentTheme.value = mode
+                            themePreferences.save(mode)
+                            AppCompatDelegate.setDefaultNightMode(mode.toNightMode())
+                        }
+                    )
+                }
             }
         }
     }
@@ -123,7 +154,9 @@ private fun BtApp(
     state: ConnectionState,
     viewModel: ConnectionViewModel,
     requestPermissions: () -> Unit,
-    requestDiscoverability: () -> Unit
+    requestDiscoverability: () -> Unit,
+    themeMode: ThemePreferences.ThemeMode,
+    onThemeModeChanged: (ThemePreferences.ThemeMode) -> Unit
 ) {
     var keyboard by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(viewModel) {
@@ -143,7 +176,13 @@ private fun BtApp(
             viewModel = viewModel
         )
     } else {
-        SetupScreen(state, viewModel, requestPermissions)
+        SetupScreen(
+            state = state,
+            viewModel = viewModel,
+            requestPermissions = requestPermissions,
+            themeMode = themeMode,
+            onThemeModeChanged = onThemeModeChanged
+        )
     }
 }
 
@@ -151,7 +190,9 @@ private fun BtApp(
 private fun SetupScreen(
     state: ConnectionState,
     viewModel: ConnectionViewModel,
-    requestPermissions: () -> Unit
+    requestPermissions: () -> Unit,
+    themeMode: ThemePreferences.ThemeMode,
+    onThemeModeChanged: (ThemePreferences.ThemeMode) -> Unit
 ) {
     Column(
         Modifier.fillMaxSize().safeDrawingPadding().verticalScroll(rememberScrollState()).padding(20.dp),
@@ -159,6 +200,26 @@ private fun SetupScreen(
     ) {
         Text("Bt-app", style = MaterialTheme.typography.headlineMedium)
         ConnectionIndicator(state)
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            ThemeSelectionButton(
+                label = "System",
+                selected = themeMode == ThemePreferences.ThemeMode.SYSTEM,
+                onClick = { onThemeModeChanged(ThemePreferences.ThemeMode.SYSTEM) }
+            )
+            ThemeSelectionButton(
+                label = "Light",
+                selected = themeMode == ThemePreferences.ThemeMode.LIGHT,
+                onClick = { onThemeModeChanged(ThemePreferences.ThemeMode.LIGHT) }
+            )
+            ThemeSelectionButton(
+                label = "Dark",
+                selected = themeMode == ThemePreferences.ThemeMode.DARK,
+                onClick = { onThemeModeChanged(ThemePreferences.ThemeMode.DARK) }
+            )
+        }
         when (state) {
             ConnectionState.PermissionRequired -> Button(onClick = requestPermissions) { Text("Grant Bluetooth permission") }
             ConnectionState.Ready, is ConnectionState.Error ->
@@ -264,6 +325,33 @@ private fun ConnectionIndicator(state: ConnectionState, modifier: Modifier = Mod
             style = MaterialTheme.typography.labelMedium,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+@Composable
+private fun ThemeSelectionButton(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    val modifier = Modifier.semantics { this.selected = selected }
+    val content: @Composable () -> Unit = {
+        Text(label, maxLines = 1, softWrap = false, style = MaterialTheme.typography.labelMedium)
+    }
+    if (selected) {
+        Button(
+            onClick = onClick,
+            modifier = modifier,
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+            content = { content() }
+        )
+    } else {
+        OutlinedButton(
+            onClick = onClick,
+            modifier = modifier,
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+            content = { content() }
         )
     }
 }
