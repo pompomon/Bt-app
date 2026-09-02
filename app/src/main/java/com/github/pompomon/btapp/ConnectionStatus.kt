@@ -67,7 +67,7 @@ internal val ConnectionState.showsInputControls: Boolean
     get() = this is ConnectionState.CheckingConnection ||
         this is ConnectionState.Reconnecting ||
         this is ConnectionState.Disconnecting ||
-        this is ConnectionState.ReconnectFailed ||
+        (this is ConnectionState.ReconnectFailed && retrying) ||
         this is ConnectionState.Connected
 
 internal val ConnectionState.acceptsHidInput: Boolean

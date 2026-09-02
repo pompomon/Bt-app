@@ -219,14 +219,6 @@ private fun ConnectedScreen(
             ConnectionIndicator(state, Modifier.weight(1f).padding(horizontal = 4.dp))
             ModeButton("Touchpad", selected = !keyboard, onClick = selectTouchpad)
             ModeButton("Keyboard", selected = keyboard, onClick = selectKeyboard)
-            if (state is ConnectionState.ReconnectFailed) {
-                OutlinedButton(
-                    onClick = viewModel::reconnect,
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
-                ) {
-                    Text("Retry", maxLines = 1, softWrap = false)
-                }
-            }
             OutlinedButton(
                 onClick = viewModel::disconnect,
                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
@@ -366,7 +358,10 @@ private fun Touchpad(viewModel: ConnectionViewModel, enabled: Boolean) {
                     }
                 }
         } else {
-            Modifier.semantics { disabled() }
+            Modifier.semantics {
+                contentDescription = "Touchpad"
+                disabled()
+            }
         }
         Box(
             Modifier.weight(2f).fillMaxHeight().background(MaterialTheme.colorScheme.surfaceVariant)

@@ -26,7 +26,11 @@ sealed interface ConnectionState {
     data class CheckingConnection(val deviceName: String) : ConnectionState
     data class Reconnecting(val deviceName: String) : ConnectionState
     data class Disconnecting(val deviceName: String) : ConnectionState
-    data class ReconnectFailed(val deviceName: String, val message: String) : ConnectionState
+    data class ReconnectFailed(
+        val deviceName: String,
+        val message: String,
+        val retrying: Boolean = false
+    ) : ConnectionState
     data class Connected(val deviceName: String, val errorMessage: String? = null) : ConnectionState
     data class Error(val message: String) : ConnectionState
 }
@@ -82,7 +86,10 @@ class BluetoothController(
                 } else {
                     when (coordinator.onConnectionLost()) {
                         ReconnectDisposition.RetryScheduled ->
-                            showReconnectFailure("Bluetooth HID registration was interrupted. Retrying…")
+                            showReconnectFailure(
+                                "Bluetooth HID registration was interrupted. Retrying…",
+                                retrying = true
+                            )
                         ReconnectDisposition.Exhausted ->
                             showReconnectFailure("Bluetooth HID registration was interrupted. Tap Retry to try again.")
                         ReconnectDisposition.Idle -> onStateChanged(initialState())
@@ -300,7 +307,10 @@ class BluetoothController(
                 val disposition = coordinator.onConnectionLost()
                 when (disposition) {
                     ReconnectDisposition.RetryScheduled ->
-                        showReconnectFailure("Bluetooth HID service was interrupted. Retrying…")
+                        showReconnectFailure(
+                            "Bluetooth HID service was interrupted. Retrying…",
+                            retrying = true
+                        )
                     ReconnectDisposition.Exhausted ->
                         showReconnectFailure("Bluetooth HID service was interrupted. Tap Retry to try again.")
                     ReconnectDisposition.Idle -> onStateChanged(initialState())
@@ -375,7 +385,10 @@ class BluetoothController(
         if (!requested) {
             connectionTarget = null
             val disposition = coordinator.onConnectionRequestFailed()
-            showReconnectFailure(reconnectFailureMessage(disposition))
+            showReconnectFailure(
+                reconnectFailureMessage(disposition),
+                retrying = disposition == ReconnectDisposition.RetryScheduled
+            )
         }
     }
 
@@ -430,7 +443,7 @@ class BluetoothController(
             BluetoothProfile.STATE_CONNECTING -> {
                 host = null
                 connectionTarget = device
-                coordinator.onConnectionRequested()
+                coordinator.onReconnectInProgress()
                 onStateChanged(ConnectionState.Reconnecting(deviceName(device, connectedDeviceName)))
             }
             BluetoothProfile.STATE_DISCONNECTING -> {
@@ -456,7 +469,13 @@ class BluetoothController(
         connectionConfirmed = false
         when (coordinator.onConnectionLost()) {
             ReconnectDisposition.RetryScheduled ->
-                onStateChanged(ConnectionState.ReconnectFailed(name, "Connection lost. Retrying…"))
+                onStateChanged(
+                    ConnectionState.ReconnectFailed(
+                        name,
+                        "Connection lost. Retrying…",
+                        retrying = true
+                    )
+                )
             ReconnectDisposition.Exhausted ->
                 onStateChanged(ConnectionState.ReconnectFailed(name, "Could not reconnect. Tap Retry to try again."))
             ReconnectDisposition.Idle -> showStableState()
@@ -684,12 +703,13 @@ class BluetoothController(
         }
     }
 
-    private fun showReconnectFailure(message: String) {
+    private fun showReconnectFailure(message: String, retrying: Boolean = false) {
         val remembered = coordinator.rememberedHost()
         onStateChanged(
             ConnectionState.ReconnectFailed(
                 remembered?.name ?: connectedDeviceName,
-                message
+                message,
+                retrying
             )
         )
     }

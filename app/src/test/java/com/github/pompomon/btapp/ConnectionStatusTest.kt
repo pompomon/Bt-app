@@ -32,7 +32,7 @@ class ConnectionStatusTest {
     @Test fun `reconnect states keep controls visible but block input`() {
         val states = listOf(
             ConnectionState.Reconnecting("Office PC"),
-            ConnectionState.ReconnectFailed("Office PC", "Connection lost. Retrying…"),
+            ConnectionState.ReconnectFailed("Office PC", "Connection lost. Retrying…", retrying = true),
             ConnectionState.Disconnecting("Office PC")
         )
 
@@ -40,6 +40,16 @@ class ConnectionStatusTest {
             assertTrue(it.showsInputControls)
             assertFalse(it.acceptsHidInput)
         }
+    }
+
+    @Test fun `exhausted reconnect returns to setup controls`() {
+        val state = ConnectionState.ReconnectFailed(
+            "Office PC",
+            "Could not reconnect. Tap Retry to try again."
+        )
+
+        assertFalse(state.showsInputControls)
+        assertFalse(state.acceptsHidInput)
     }
 
     @Test fun `failed report is shown as degraded and blocks input`() {

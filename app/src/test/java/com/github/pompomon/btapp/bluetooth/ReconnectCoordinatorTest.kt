@@ -127,6 +127,17 @@ class ReconnectCoordinatorTest {
         )
     }
 
+    @Test fun `backgrounding cancels a reconnect observed during foreground validation`() {
+        val fixture = Fixture(remembered)
+        fixture.connectRememberedHost()
+        fixture.coordinator.onConnected(remembered)
+        fixture.coordinator.onBackground()
+        fixture.coordinator.onForeground(true, listOf(remembered))
+        fixture.coordinator.onReconnectInProgress()
+
+        assertTrue(fixture.coordinator.onBackground())
+    }
+
     @Test fun `backgrounding cancels an in-flight automatic reconnect`() {
         val fixture = Fixture(remembered)
         fixture.connectRememberedHost()
