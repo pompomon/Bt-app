@@ -558,7 +558,17 @@ class BluetoothController(
         coordinator.onManualDisconnect()
         val target = host ?: connectionTarget
         if (target == null) {
-            showStableState()
+            val remembered = coordinator.rememberedHost()
+            if (remembered == null) {
+                showStableState()
+            } else {
+                onStateChanged(
+                    ConnectionState.ReconnectFailed(
+                        remembered.name,
+                        "Reconnect cancelled. Tap Retry to try again."
+                    )
+                )
+            }
             return
         }
         disconnectDevice(target, releaseReports = host != null)
