@@ -519,7 +519,7 @@ private fun TouchpadActionButton(
 
 @Composable
 private fun Keyboard(viewModel: ConnectionViewModel, enabled: Boolean) {
-    var modifiers by remember { mutableStateOf(0) }
+    var modifiers by remember(enabled) { mutableStateOf(0) }
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val compact = maxWidth < 700.dp || maxHeight < 300.dp
         val spacing = if (compact) 2.dp else 4.dp

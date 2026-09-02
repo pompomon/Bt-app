@@ -257,7 +257,13 @@ class BluetoothController(
         }
         if (pendingRegistration || profileRequestPending) return
 
-        onStateChanged(ConnectionState.Registering)
+        onStateChanged(
+            if (coordinator.isReconnectPending()) {
+                ConnectionState.Reconnecting(coordinator.rememberedHost()?.name ?: DEFAULT_HOST_NAME)
+            } else {
+                ConnectionState.Registering
+            }
+        )
         hidDevice?.let {
             registerApp(it)
             return
