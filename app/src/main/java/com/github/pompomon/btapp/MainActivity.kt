@@ -16,6 +16,7 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -29,9 +30,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -48,10 +51,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
@@ -158,7 +167,7 @@ private fun BtApp(
         }
     }
 
-    if (state is ConnectionState.Connected) {
+    if (state.showsInputControls) {
         ConnectedScreen(
             state = state,
             keyboard = keyboard,
@@ -190,7 +199,7 @@ private fun SetupScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text("Bt-app", style = MaterialTheme.typography.headlineMedium)
-        Text(statusText(state))
+        ConnectionIndicator(state)
         Row(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -252,12 +261,13 @@ private fun SetupScreen(
 
 @Composable
 private fun ConnectedScreen(
-    state: ConnectionState.Connected,
+    state: ConnectionState,
     keyboard: Boolean,
     selectTouchpad: () -> Unit,
     selectKeyboard: () -> Unit,
     viewModel: ConnectionViewModel
 ) {
+    val inputEnabled = state.acceptsHidInput
     Column(
         Modifier.fillMaxSize().safeDrawingPadding().padding(horizontal = 6.dp, vertical = 4.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -267,13 +277,7 @@ private fun ConnectedScreen(
             horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = statusText(state),
-                modifier = Modifier.weight(1f).padding(horizontal = 4.dp),
-                style = MaterialTheme.typography.labelMedium,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
+            ConnectionIndicator(state, Modifier.weight(1f).padding(horizontal = 4.dp))
             ModeButton("Touchpad", selected = !keyboard, onClick = selectTouchpad)
             ModeButton("Keyboard", selected = keyboard, onClick = selectKeyboard)
             OutlinedButton(
@@ -283,9 +287,45 @@ private fun ConnectedScreen(
                 Text("Disconnect", maxLines = 1, softWrap = false)
             }
         }
-        Box(Modifier.fillMaxWidth().weight(1f)) {
-            if (keyboard) Keyboard(viewModel) else Touchpad(viewModel)
+        Box(Modifier.fillMaxWidth().weight(1f).alpha(if (inputEnabled) 1f else 0.5f)) {
+            if (keyboard) {
+                Keyboard(viewModel, enabled = inputEnabled)
+            } else {
+                Touchpad(viewModel, enabled = inputEnabled)
+            }
         }
+    }
+}
+
+@Composable
+private fun ConnectionIndicator(state: ConnectionState, modifier: Modifier = Modifier) {
+    val status = connectionStatus(state)
+    val color = when (status.tone) {
+        ConnectionStatusTone.Connected -> ConnectedIndicatorColor
+        ConnectionStatusTone.Progress -> MaterialTheme.colorScheme.primary
+        ConnectionStatusTone.Error -> MaterialTheme.colorScheme.error
+        ConnectionStatusTone.Idle -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Row(
+        modifier.semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (status.tone == ConnectionStatusTone.Progress) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(14.dp),
+                color = color,
+                strokeWidth = 2.dp
+            )
+        } else {
+            Box(Modifier.size(10.dp).clip(CircleShape).background(color))
+        }
+        Text(
+            text = status.text,
+            style = MaterialTheme.typography.labelMedium,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
@@ -340,7 +380,7 @@ private fun ModeButton(label: String, selected: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun Touchpad(viewModel: ConnectionViewModel) {
+private fun Touchpad(viewModel: ConnectionViewModel, enabled: Boolean) {
     val detector = remember { TouchpadGestureDetector() }
     val click: (Int) -> Unit = { fingerCount ->
         detector.tap(fingerCount)?.let(viewModel::pointer)
@@ -355,12 +395,17 @@ private fun Touchpad(viewModel: ConnectionViewModel) {
             Modifier.weight(2f).fillMaxHeight().background(MaterialTheme.colorScheme.surfaceVariant)
             .semantics {
                 contentDescription = "Touchpad"
-                onClick("Left click") {
-                    click(1)
-                    true
+                if (enabled) {
+                    onClick("Left click") {
+                        click(1)
+                        true
+                    }
+                } else {
+                    disabled()
                 }
             }
-            .pointerInput(detector, viewModel) {
+            .pointerInput(detector, viewModel, enabled) {
+                if (!enabled) return@pointerInput
                 awaitEachGesture {
                     var accumulatedDelta = Offset.Zero
                     var dragStarted = false
@@ -424,8 +469,8 @@ private fun Touchpad(viewModel: ConnectionViewModel) {
                     Modifier.fillMaxWidth().weight(1f),
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    TouchpadActionButton("Left click", { click(1) }, Modifier.weight(1f))
-                    TouchpadActionButton("Right click", { click(2) }, Modifier.weight(1f))
+                    TouchpadActionButton("Left click", { click(1) }, Modifier.weight(1f), enabled)
+                    TouchpadActionButton("Right click", { click(2) }, Modifier.weight(1f), enabled)
                 }
                 Row(
                     Modifier.fillMaxWidth().weight(1f),
@@ -434,12 +479,14 @@ private fun Touchpad(viewModel: ConnectionViewModel) {
                     TouchpadActionButton(
                         "Scroll up",
                         { viewModel.pointer(detector.scroll(1f)) },
-                        Modifier.weight(1f)
+                        Modifier.weight(1f),
+                        enabled
                     )
                     TouchpadActionButton(
                         "Scroll down",
                         { viewModel.pointer(detector.scroll(-1f)) },
-                        Modifier.weight(1f)
+                        Modifier.weight(1f),
+                        enabled
                     )
                 }
             }
@@ -451,10 +498,12 @@ private fun Touchpad(viewModel: ConnectionViewModel) {
 private fun TouchpadActionButton(
     label: String,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true
 ) {
     OutlinedButton(
         onClick = onClick,
+        enabled = enabled,
         modifier = modifier.fillMaxHeight(),
         contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
     ) {
@@ -469,8 +518,8 @@ private fun TouchpadActionButton(
 }
 
 @Composable
-private fun Keyboard(viewModel: ConnectionViewModel) {
-    var modifiers by remember { mutableStateOf(0) }
+private fun Keyboard(viewModel: ConnectionViewModel, enabled: Boolean) {
+    var modifiers by remember(enabled) { mutableStateOf(0) }
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val compact = maxWidth < 700.dp || maxHeight < 300.dp
         val spacing = if (compact) 2.dp else 4.dp
@@ -499,6 +548,7 @@ private fun Keyboard(viewModel: ConnectionViewModel) {
                             key = key,
                             selected = selected,
                             compact = compact,
+                            enabled = enabled,
                             modifier = Modifier.width(keyWidth).height(rowHeight),
                             onClick = {
                                 key.modifier?.let { modifiers = modifiers xor it }
@@ -517,6 +567,7 @@ private fun KeyboardButton(
     key: KeyboardKey,
     selected: Boolean,
     compact: Boolean,
+    enabled: Boolean,
     modifier: Modifier,
     onClick: () -> Unit
 ) {
@@ -536,6 +587,7 @@ private fun KeyboardButton(
     if (selected) {
         Button(
             onClick = onClick,
+            enabled = enabled,
             modifier = buttonModifier,
             contentPadding = PaddingValues(horizontal = 2.dp, vertical = 0.dp),
             content = { content() }
@@ -543,6 +595,7 @@ private fun KeyboardButton(
     } else {
         OutlinedButton(
             onClick = onClick,
+            enabled = enabled,
             modifier = buttonModifier,
             contentPadding = PaddingValues(horizontal = 2.dp, vertical = 0.dp),
             content = { content() }
@@ -550,18 +603,4 @@ private fun KeyboardButton(
     }
 }
 
-private fun statusText(state: ConnectionState): String = when (state) {
-    ConnectionState.Unsupported -> "Bluetooth is not supported on this device."
-    ConnectionState.BluetoothDisabled -> "Turn Bluetooth on, then register the HID device."
-    ConnectionState.PermissionRequired -> "Bluetooth permission is required."
-    ConnectionState.Ready -> "Ready to register as a Bluetooth keyboard and mouse."
-    ConnectionState.Registering -> "Registering Bluetooth HID device…"
-    is ConnectionState.Registered -> state.rememberedDeviceName?.let {
-        "HID registered. Ready to reconnect to $it."
-    } ?: "HID registered. Pair from the PC Bluetooth settings."
-    is ConnectionState.Reconnecting -> "Reconnecting to ${state.deviceName}…"
-    is ConnectionState.Disconnecting -> "Disconnecting from ${state.deviceName}…"
-    is ConnectionState.ReconnectFailed -> state.message
-    is ConnectionState.Connected -> state.errorMessage ?: "Connected to ${state.deviceName}."
-    is ConnectionState.Error -> state.message
-}
+private val ConnectedIndicatorColor = Color(0xFF2E7D32)

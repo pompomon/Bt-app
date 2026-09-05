@@ -149,6 +149,12 @@ internal class ReconnectCoordinator(
         connectionRequested = true
     }
 
+    fun onReconnectInProgress() {
+        intent = Intent.Reconnect
+        connectionRequested = true
+        cancelRetry()
+    }
+
     fun onConnectionBlocked() {
         connectionRequested = false
         cancelRetry()

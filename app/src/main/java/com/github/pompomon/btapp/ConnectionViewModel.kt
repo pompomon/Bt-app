@@ -44,14 +44,19 @@ class ConnectionViewModel(application: Application) : AndroidViewModel(applicati
     fun forgetRememberedHost() = controller.forgetRememberedHost()
 
     fun key(key: String, modifiers: Int = 0) {
+        if (!_state.value.acceptsHidInput) return
         val stroke = if (modifiers == 0) mapper.map(key) else mapper.shortcut(key, modifiers)
         if (stroke == null) return
-        controller.sendKeyboard(HidReportEncoder.keyboard(stroke.modifiers, listOf(stroke.usage)))
-        controller.sendKeyboard(HidReportEncoder.keyboard(0, emptyList()))
+        if (controller.sendKeyboard(HidReportEncoder.keyboard(stroke.modifiers, listOf(stroke.usage)))) {
+            controller.sendKeyboard(HidReportEncoder.keyboard(0, emptyList()))
+        }
     }
 
     fun mouse(buttons: Int, x: Int, y: Int, wheel: Int = 0) {
-        HidReportEncoder.mouseSequence(buttons, x, y, wheel).forEach(controller::sendMouse)
+        if (!_state.value.acceptsHidInput) return
+        for (report in HidReportEncoder.mouseSequence(buttons, x, y, wheel)) {
+            if (!controller.sendMouse(report)) break
+        }
     }
 
     fun pointer(event: PointerEvent) {
