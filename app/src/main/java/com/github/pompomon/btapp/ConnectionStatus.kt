@@ -28,7 +28,7 @@ internal fun connectionStatus(state: ConnectionState): ConnectionStatus = when (
         ConnectionStatusTone.Error
     )
     ConnectionState.Ready -> ConnectionStatus(
-        "Ready to register as a Bluetooth keyboard and mouse.",
+        "Ready to register as a Bluetooth keyboard, mouse, and media remote.",
         ConnectionStatusTone.Idle
     )
     ConnectionState.Registering -> ConnectionStatus(

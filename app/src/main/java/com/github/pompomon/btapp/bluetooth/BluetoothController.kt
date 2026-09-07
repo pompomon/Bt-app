@@ -45,7 +45,7 @@ class BluetoothController(
     private var hidDevice: BluetoothHidDevice? = null
     private var host: BluetoothDevice? = null
     private var connectionTarget: BluetoothDevice? = null
-    private var switchDisconnectTarget: BluetoothDevice? = null
+    private var switchDisconnectAddress: String? = null
     private var connectedIdentityPending = false
     private var connectedDeviceName = DEFAULT_HOST_NAME
     private var connectionConfirmed = false
@@ -85,7 +85,7 @@ class BluetoothController(
             } else {
                 host = null
                 connectionTarget = null
-                switchDisconnectTarget = null
+                switchDisconnectAddress = null
                 connectedIdentityPending = false
                 connectedDeviceName = DEFAULT_HOST_NAME
                 connectionConfirmed = false
@@ -335,7 +335,7 @@ class BluetoothController(
             hidDevice = null
             host = null
             connectionTarget = null
-            switchDisconnectTarget = null
+            switchDisconnectAddress = null
             connectedIdentityPending = false
             connectionConfirmed = false
             coordinator.onRegistrationLost()
@@ -360,8 +360,8 @@ class BluetoothController(
     private fun registerApp(device: BluetoothHidDevice) {
         if (closed || pendingRegistration || appRegistered) return
         val sdp = BluetoothHidDeviceAppSdpSettings(
-            "Bt-app keyboard and mouse",
-            "Standard Bluetooth HID keyboard and relative mouse",
+            "Bt-app keyboard, mouse, and media controls",
+            "Standard Bluetooth HID keyboard, relative mouse, and consumer controls",
             "pompomon",
             BluetoothHidDevice.SUBCLASS1_COMBO,
             HidDescriptor.bytes
@@ -444,7 +444,7 @@ class BluetoothController(
                 pairingWindowScheduler.cancel()
                 host = device
                 connectionTarget = null
-                switchDisconnectTarget = null
+                switchDisconnectAddress = null
                 connectedDeviceName = identity.name
                 connectionConfirmed = true
                 notifyHostSelectionChanged()
@@ -502,8 +502,8 @@ class BluetoothController(
         val targetAddress = connectionTarget?.let(::deviceAddress)
         if (activeAddress != disconnectedAddress && targetAddress != disconnectedAddress) return
 
-        val switchingHosts = switchDisconnectTarget == device
-        if (switchingHosts) switchDisconnectTarget = null
+        val switchingHosts = switchDisconnectAddress == disconnectedAddress
+        if (switchingHosts) switchDisconnectAddress = null
         val name = deviceName(device, connectedDeviceName)
         host = null
         connectionTarget = null
@@ -560,27 +560,32 @@ class BluetoothController(
     }
 
     private fun disconnectForHostSwitch() {
-        if (switchDisconnectTarget != null) return
+        if (switchDisconnectAddress != null) return
         val target = host ?: connectionTarget
         if (target == null) {
             executeActions(coordinator.onSwitchDisconnected(bondedHosts()))
             return
         }
+        val currentAddress = deviceAddress(target) ?: run {
+            coordinator.onSwitchDisconnectFailed(null)
+            notifyHostSelectionChanged()
+            return
+        }
         val device = hidDevice
         if (device == null) {
-            coordinator.onSwitchDisconnectFailed(deviceAddress(target))
+            coordinator.onSwitchDisconnectFailed(currentAddress)
             notifyHostSelectionChanged()
             showConnectionError("Bluetooth HID profile is unavailable.")
             return
         }
-        switchDisconnectTarget = target
+        switchDisconnectAddress = currentAddress
         val name = deviceName(target, connectedDeviceName)
         val requested = try {
             if (host != null) releaseInputs(device, target)
             device.disconnect(target)
         } catch (exception: SecurityException) {
-            switchDisconnectTarget = null
-            coordinator.onSwitchDisconnectFailed(deviceAddress(target))
+            switchDisconnectAddress = null
+            coordinator.onSwitchDisconnectFailed(currentAddress)
             notifyHostSelectionChanged()
             Log.w(TAG, "Bluetooth host switch rejected", exception)
             onStateChanged(ConnectionState.PermissionRequired)
@@ -590,8 +595,8 @@ class BluetoothController(
             connectionConfirmed = false
             onStateChanged(ConnectionState.Disconnecting(name))
         } else {
-            switchDisconnectTarget = null
-            coordinator.onSwitchDisconnectFailed(deviceAddress(target))
+            switchDisconnectAddress = null
+            coordinator.onSwitchDisconnectFailed(currentAddress)
             notifyHostSelectionChanged()
             if (host != null) {
                 showConnectionError("Could not disconnect from the current Bluetooth host.")
@@ -655,7 +660,7 @@ class BluetoothController(
 
     fun disconnect() {
         coordinator.onManualDisconnect()
-        switchDisconnectTarget = null
+        switchDisconnectAddress = null
         val target = host ?: connectionTarget
         if (target == null) {
             val remembered = coordinator.rememberedHost()
@@ -735,7 +740,7 @@ class BluetoothController(
         hidDevice = null
         host = null
         connectionTarget = null
-        switchDisconnectTarget = null
+        switchDisconnectAddress = null
         connectedIdentityPending = false
         connectionConfirmed = false
     }

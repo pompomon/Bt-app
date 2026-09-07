@@ -278,7 +278,7 @@ private fun SetupScreen(
             ConnectionState.Unsupported -> Unit
             else -> Unit
         }
-        Text("Pair from your PC's Bluetooth settings. The last connected computer reconnects automatically while this app is open.")
+        Text("Pair from your PC's Bluetooth settings. The selected computer reconnects automatically while this app is open.")
     }
 }
 
@@ -624,7 +624,7 @@ private fun TouchpadActionButton(
 private fun Keyboard(viewModel: ConnectionViewModel, enabled: Boolean) {
     var modifiers by remember(enabled) { mutableStateOf(0) }
     DisposableEffect(viewModel, enabled) {
-        onDispose(viewModel::keyUp)
+        onDispose { viewModel.keyUp() }
     }
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val compact = maxWidth < 700.dp || maxHeight < 300.dp
@@ -746,13 +746,13 @@ private fun KeyboardButton(
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
     ) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text(
-            key.label,
-            style = if (compact) MaterialTheme.typography.labelSmall else MaterialTheme.typography.labelMedium,
-            maxLines = 1,
-            softWrap = false,
-            overflow = TextOverflow.Clip
-        )
+            Text(
+                key.label,
+                style = if (compact) MaterialTheme.typography.labelSmall else MaterialTheme.typography.labelMedium,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Clip
+            )
         }
     }
 }

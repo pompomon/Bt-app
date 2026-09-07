@@ -336,6 +336,51 @@ class ReconnectCoordinatorTest {
         assertEquals(listOf(remembered), fixture.store.loadAll())
     }
 
+    @Test fun `forgetting the selected host retains other remembered hosts`() {
+        val fixture = Fixture(remembered)
+        fixture.store.save(other)
+
+        fixture.coordinator.forgetRememberedHost()
+
+        assertEquals(listOf(remembered), fixture.store.loadAll())
+        assertEquals(remembered, fixture.store.host)
+    }
+
+    @Test fun `selecting the active host does not reconnect`() {
+        val fixture = Fixture(remembered)
+        fixture.connectRememberedHost()
+        fixture.coordinator.onConnected(remembered)
+
+        assertTrue(
+            fixture.coordinator.selectHost(
+                remembered.address,
+                remembered.address,
+                prerequisitesAvailable = true,
+                bondedHosts = listOf(remembered)
+            ).isEmpty()
+        )
+    }
+
+    @Test fun `lost connection during a switch reconnects immediately`() {
+        val fixture = Fixture(remembered)
+        fixture.store.save(other)
+        fixture.store.select(remembered.address)
+        fixture.connectRememberedHost()
+        fixture.coordinator.onConnected(remembered)
+        fixture.coordinator.selectHost(
+            other.address,
+            remembered.address,
+            prerequisitesAvailable = true,
+            bondedHosts = listOf(remembered, other)
+        )
+
+        assertEquals(ReconnectDisposition.ReconnectNow, fixture.coordinator.onConnectionLost())
+        assertEquals(
+            listOf(ReconnectAction.Connect(other)),
+            fixture.coordinator.onPrerequisitesAvailable(listOf(remembered, other))
+        )
+    }
+
     @Test fun `unexpected host is rejected outside the pairing window`() {
         val fixture = Fixture(remembered)
         fixture.connectRememberedHost()
