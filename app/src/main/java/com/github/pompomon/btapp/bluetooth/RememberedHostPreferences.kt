@@ -22,15 +22,16 @@ internal class RememberedHostPreferences(context: Context) : RememberedHostStore
         val hosts = entries.mapNotNull(::decodeHost)
             .distinctBy(RememberedHost::address)
             .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER, RememberedHost::name).thenBy(RememberedHost::address))
-        if (hosts.size != entries.size) saveHosts(hosts)
+        if (hosts.size != entries.size) {
+            saveHosts(hosts, preferences.getString(KEY_SELECTED_ADDRESS, null))
+        }
         return hosts
     }
 
     override fun save(host: RememberedHost) {
         val address = normalizeBluetoothAddress(host.address) ?: return
         val normalized = RememberedHost(address, safeHostName(host.name))
-        val hosts = (loadAll().filterNot { it.address == address } + normalized)
-            .takeLast(MAX_REMEMBERED_HOSTS)
+        val hosts = loadAll().filterNot { it.address == address } + normalized
         saveHosts(hosts, address)
     }
 
@@ -98,7 +99,6 @@ internal class RememberedHostPreferences(context: Context) : RememberedHostStore
         const val KEY_SELECTED_ADDRESS = "selected_address"
         const val HOST_SEPARATOR = '|'
         const val BLUETOOTH_ADDRESS_LENGTH = 17
-        const val MAX_REMEMBERED_HOSTS = 10
 
         fun encodeHost(host: RememberedHost): String = "${host.address}$HOST_SEPARATOR${host.name}"
 

@@ -63,10 +63,10 @@ the app returns from the background, it checks Android's HID connection state
 before enabling keyboard, touchpad, or media input. The selected input remains
 visible but dimmed while that check or an automatic reconnect is in progress.
 
-The app remembers up to ten computers that successfully established an HID
-connection. The selected computer reconnects automatically on later launches,
-with up to three delayed retries after an unexpected disconnect. When multiple
-computers are remembered, use the device selector to switch; the current host is
+The app remembers computers that successfully established an HID connection.
+The selected computer reconnects automatically on later launches, with up to
+three delayed retries after an unexpected disconnect. When multiple computers
+are remembered, use the device selector to switch; the current host is
 disconnected before the selected host is contacted. Automatic reconnect runs
 only while the app is open in the foreground; there is no background service or
 persistent notification.
