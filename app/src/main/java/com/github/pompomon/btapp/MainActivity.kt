@@ -11,8 +11,11 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.rememberScrollState
@@ -42,6 +45,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -58,16 +62,20 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.github.pompomon.btapp.bluetooth.ConnectionState
+import com.github.pompomon.btapp.bluetooth.HostSelection
+import com.github.pompomon.btapp.hid.ConsumerUsage
 import com.github.pompomon.btapp.input.TouchpadGestureDetector
 import kotlinx.coroutines.flow.collect
 
@@ -158,7 +166,8 @@ private fun BtApp(
     themeMode: ThemePreferences.ThemeMode,
     onThemeModeChanged: (ThemePreferences.ThemeMode) -> Unit
 ) {
-    var keyboard by rememberSaveable { mutableStateOf(false) }
+    var inputMode by rememberSaveable { mutableStateOf(InputMode.Touchpad) }
+    val hostSelection by viewModel.hostSelection.collectAsStateWithLifecycle()
     LaunchedEffect(viewModel) {
         viewModel.events.collect { event ->
             when (event) {
@@ -170,9 +179,9 @@ private fun BtApp(
     if (state.showsInputControls) {
         ConnectedScreen(
             state = state,
-            keyboard = keyboard,
-            selectTouchpad = { keyboard = false },
-            selectKeyboard = { keyboard = true },
+            inputMode = inputMode,
+            selectInputMode = { inputMode = it },
+            hostSelection = hostSelection,
             viewModel = viewModel
         )
     } else {
@@ -180,6 +189,7 @@ private fun BtApp(
             state = state,
             viewModel = viewModel,
             requestPermissions = requestPermissions,
+            hostSelection = hostSelection,
             themeMode = themeMode,
             onThemeModeChanged = onThemeModeChanged
         )
@@ -191,6 +201,7 @@ private fun SetupScreen(
     state: ConnectionState,
     viewModel: ConnectionViewModel,
     requestPermissions: () -> Unit,
+    hostSelection: HostSelection,
     themeMode: ThemePreferences.ThemeMode,
     onThemeModeChanged: (ThemePreferences.ThemeMode) -> Unit
 ) {
@@ -220,10 +231,22 @@ private fun SetupScreen(
                 onClick = { onThemeModeChanged(ThemePreferences.ThemeMode.DARK) }
             )
         }
+        HostSelector(hostSelection, viewModel::switchHost)
         when (state) {
             ConnectionState.PermissionRequired -> Button(onClick = requestPermissions) { Text("Grant Bluetooth permission") }
-            ConnectionState.Ready, is ConnectionState.Error ->
+            ConnectionState.Ready ->
                 Button(onClick = viewModel::pairNewDevice) { Text("Pair a device") }
+            is ConnectionState.Error -> {
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (hostSelection.selectedHost != null) {
+                        Button(onClick = viewModel::reconnect) { Text("Reconnect") }
+                    }
+                    OutlinedButton(onClick = viewModel::pairNewDevice) { Text("Pair another device") }
+                }
+            }
             ConnectionState.BluetoothDisabled ->
                 OutlinedButton(onClick = viewModel::onPrerequisitesChanged) { Text("Check Bluetooth status") }
             is ConnectionState.Registered -> {
@@ -262,9 +285,9 @@ private fun SetupScreen(
 @Composable
 private fun ConnectedScreen(
     state: ConnectionState,
-    keyboard: Boolean,
-    selectTouchpad: () -> Unit,
-    selectKeyboard: () -> Unit,
+    inputMode: InputMode,
+    selectInputMode: (InputMode) -> Unit,
+    hostSelection: HostSelection,
     viewModel: ConnectionViewModel
 ) {
     val inputEnabled = state.acceptsHidInput
@@ -278,8 +301,21 @@ private fun ConnectedScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             ConnectionIndicator(state, Modifier.weight(1f).padding(horizontal = 4.dp))
-            ModeButton("Touchpad", selected = !keyboard, onClick = selectTouchpad)
-            ModeButton("Keyboard", selected = keyboard, onClick = selectKeyboard)
+            ModeButton(
+                "Touchpad",
+                selected = inputMode == InputMode.Touchpad,
+                onClick = { selectInputMode(InputMode.Touchpad) }
+            )
+            ModeButton(
+                "Keyboard",
+                selected = inputMode == InputMode.Keyboard,
+                onClick = { selectInputMode(InputMode.Keyboard) }
+            )
+            ModeButton(
+                "Media",
+                selected = inputMode == InputMode.Media,
+                onClick = { selectInputMode(InputMode.Media) }
+            )
             OutlinedButton(
                 onClick = viewModel::disconnect,
                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
@@ -287,12 +323,41 @@ private fun ConnectedScreen(
                 Text("Disconnect", maxLines = 1, softWrap = false)
             }
         }
+        HostSelector(hostSelection, viewModel::switchHost)
         Box(Modifier.fillMaxWidth().weight(1f).alpha(if (inputEnabled) 1f else 0.5f)) {
-            if (keyboard) {
-                Keyboard(viewModel, enabled = inputEnabled)
-            } else {
-                Touchpad(viewModel, enabled = inputEnabled)
+            when (inputMode) {
+                InputMode.Touchpad -> Touchpad(viewModel, enabled = inputEnabled)
+                InputMode.Keyboard -> Keyboard(viewModel, enabled = inputEnabled)
+                InputMode.Media -> MediaControls(viewModel, enabled = inputEnabled)
             }
+        }
+    }
+}
+
+@Composable
+private fun HostSelector(
+    selection: HostSelection,
+    onHostSelected: (String) -> Unit
+) {
+    if (selection.hosts.size < 2) return
+    val duplicateNames = selection.hosts.groupingBy { it.name }.eachCount()
+    Row(
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text("Devices:", style = MaterialTheme.typography.labelMedium)
+        selection.hosts.forEach { host ->
+            val label = if (duplicateNames[host.name] == 1) {
+                host.name
+            } else {
+                "${host.name} (${host.address.takeLast(5)})"
+            }
+            ModeButton(
+                label = label,
+                selected = host.address == selection.selectedAddress,
+                onClick = { onHostSelected(host.address) }
+            )
         }
     }
 }
@@ -376,6 +441,44 @@ private fun ModeButton(label: String, selected: Boolean, onClick: () -> Unit) {
             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
             content = { content() }
         )
+    }
+}
+
+@Composable
+private fun MediaControls(viewModel: ConnectionViewModel, enabled: Boolean) {
+    val controls = listOf(
+        listOf(
+            "Previous" to ConsumerUsage.PREVIOUS_TRACK,
+            "Play / pause" to ConsumerUsage.PLAY_PAUSE,
+            "Next" to ConsumerUsage.NEXT_TRACK,
+            "Stop" to ConsumerUsage.STOP
+        ),
+        listOf(
+            "Volume down" to ConsumerUsage.VOLUME_DOWN,
+            "Mute" to ConsumerUsage.MUTE,
+            "Volume up" to ConsumerUsage.VOLUME_UP
+        )
+    )
+    Column(
+        Modifier.fillMaxSize().padding(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        controls.forEach { row ->
+            Row(
+                Modifier.fillMaxWidth().weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                row.forEach { (label, usage) ->
+                    OutlinedButton(
+                        onClick = { viewModel.media(usage) },
+                        enabled = enabled,
+                        modifier = Modifier.weight(1f).fillMaxHeight()
+                    ) {
+                        Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -520,6 +623,9 @@ private fun TouchpadActionButton(
 @Composable
 private fun Keyboard(viewModel: ConnectionViewModel, enabled: Boolean) {
     var modifiers by remember(enabled) { mutableStateOf(0) }
+    DisposableEffect(viewModel, enabled) {
+        onDispose(viewModel::keyUp)
+    }
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val compact = maxWidth < 700.dp || maxHeight < 300.dp
         val spacing = if (compact) 2.dp else 4.dp
@@ -552,7 +658,19 @@ private fun Keyboard(viewModel: ConnectionViewModel, enabled: Boolean) {
                             modifier = Modifier.width(keyWidth).height(rowHeight),
                             onClick = {
                                 key.modifier?.let { modifiers = modifiers xor it }
-                                    ?: key.command?.let { viewModel.key(it, modifiers) }
+                                    ?: key.command?.let {
+                                        viewModel.key(it, modifiers)
+                                        modifiers = 0
+                                    }
+                            },
+                            onPress = key.command?.let { command ->
+                                { viewModel.keyDown(command, modifiers) }
+                            },
+                            onRelease = key.command?.let {
+                                {
+                                    viewModel.keyUp()
+                                    modifiers = 0
+                                }
                             }
                         )
                     }
@@ -569,13 +687,65 @@ private fun KeyboardButton(
     compact: Boolean,
     enabled: Boolean,
     modifier: Modifier,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onPress: (() -> Unit)?,
+    onRelease: (() -> Unit)?
 ) {
-    val buttonModifier = modifier.semantics {
-        contentDescription = key.contentDescription
-        if (key.modifier != null) this.selected = selected
+    val inputModifier = if (enabled) {
+        Modifier.pointerInput(key, onPress, onRelease) {
+            awaitEachGesture {
+                val down = awaitFirstDown()
+                down.consume()
+                if (onPress == null) {
+                    val up = waitForUpOrCancellation()
+                    up?.consume()
+                    if (up != null) onClick()
+                } else {
+                    onPress()
+                    try {
+                        waitForUpOrCancellation()?.consume()
+                    } finally {
+                        onRelease?.invoke()
+                    }
+                }
+            }
+        }
+    } else {
+        Modifier
     }
-    val content: @Composable () -> Unit = {
+    val buttonModifier = modifier
+        .then(inputModifier)
+        .semantics {
+            role = Role.Button
+            contentDescription = key.contentDescription
+            if (key.modifier != null) this.selected = selected
+            if (enabled) {
+                this.onClick {
+                    onClick()
+                    true
+                }
+            } else {
+                disabled()
+            }
+        }
+    val containerColor = if (selected) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.surface
+    }
+    val contentColor = if (selected) {
+        MaterialTheme.colorScheme.onPrimary
+    } else {
+        MaterialTheme.colorScheme.primary
+    }
+    Surface(
+        modifier = buttonModifier,
+        shape = MaterialTheme.shapes.small,
+        color = containerColor,
+        contentColor = contentColor,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+    ) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Text(
             key.label,
             style = if (compact) MaterialTheme.typography.labelSmall else MaterialTheme.typography.labelMedium,
@@ -583,24 +753,14 @@ private fun KeyboardButton(
             softWrap = false,
             overflow = TextOverflow.Clip
         )
+        }
     }
-    if (selected) {
-        Button(
-            onClick = onClick,
-            enabled = enabled,
-            modifier = buttonModifier,
-            contentPadding = PaddingValues(horizontal = 2.dp, vertical = 0.dp),
-            content = { content() }
-        )
-    } else {
-        OutlinedButton(
-            onClick = onClick,
-            enabled = enabled,
-            modifier = buttonModifier,
-            contentPadding = PaddingValues(horizontal = 2.dp, vertical = 0.dp),
-            content = { content() }
-        )
-    }
+}
+
+private enum class InputMode {
+    Touchpad,
+    Keyboard,
+    Media
 }
 
 private val ConnectedIndicatorColor = Color(0xFF2E7D32)

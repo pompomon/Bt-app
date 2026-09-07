@@ -8,6 +8,7 @@ internal interface ReconnectScheduler {
 internal sealed interface ReconnectAction {
     data object RegisterHid : ReconnectAction
     data class Connect(val host: RememberedHost) : ReconnectAction
+    data object DisconnectCurrent : ReconnectAction
     data object RequestDiscoverability : ReconnectAction
     data class RememberedHostUnavailable(val deviceName: String) : ReconnectAction
     data object Retry : ReconnectAction
@@ -20,6 +21,7 @@ internal enum class ConnectionDecision {
 
 internal enum class ReconnectDisposition {
     Idle,
+    ReconnectNow,
     RetryScheduled,
     Exhausted
 }
@@ -47,6 +49,7 @@ internal class ReconnectCoordinator(
     private var connectedAddress: String? = null
     private var retryCount = 0
     private var retryScheduled = false
+    private var switchPending = false
 
     fun onForeground(
         prerequisitesAvailable: Boolean,
@@ -88,6 +91,7 @@ internal class ReconnectCoordinator(
     fun onPairRequested(prerequisitesAvailable: Boolean): List<ReconnectAction> {
         reconnectSuppressed = true
         intent = Intent.Pair
+        switchPending = false
         retryCount = 0
         cancelRetry()
         return if (prerequisitesAvailable) advance(emptyList()) else emptyList()
@@ -107,6 +111,7 @@ internal class ReconnectCoordinator(
     ): List<ReconnectAction> {
         reconnectSuppressed = false
         intent = Intent.Reconnect
+        switchPending = false
         retryCount = 0
         cancelRetry()
         return if (prerequisitesAvailable) advance(bondedHosts) else emptyList()
@@ -115,14 +120,16 @@ internal class ReconnectCoordinator(
     fun onManualDisconnect() {
         reconnectSuppressed = true
         intent = Intent.None
+        switchPending = false
         retryCount = 0
         cancelRetry()
     }
 
     fun forgetRememberedHost() {
-        hostStore.clear()
+        hostStore.load()?.let { hostStore.remove(it.address) }
         reconnectSuppressed = true
         intent = Intent.None
+        switchPending = false
         connectionRequested = false
         retryCount = 0
         cancelRetry()
@@ -172,6 +179,15 @@ internal class ReconnectCoordinator(
     fun onConnectionLost(): ReconnectDisposition {
         connectionRequested = false
         connectedAddress = null
+        if (switchPending) {
+            switchPending = false
+            intent = Intent.Reconnect
+            return if (!reconnectSuppressed && foreground && hostStore.load() != null) {
+                ReconnectDisposition.ReconnectNow
+            } else {
+                ReconnectDisposition.Idle
+            }
+        }
         if (reconnectSuppressed || !foreground || hostStore.load() == null) {
             if (intent != Intent.AwaitingPair) intent = Intent.None
             return ReconnectDisposition.Idle
@@ -181,14 +197,21 @@ internal class ReconnectCoordinator(
     }
 
     fun onConnected(host: RememberedHost): ConnectionDecision {
+        val address = normalizeBluetoothAddress(host.address) ?: return ConnectionDecision.Disconnect
+        val acceptingPair = intent == Intent.AwaitingPair
+        val selectedAddress = normalizeBluetoothAddress(hostStore.load()?.address)
+        if (
+            !acceptingPair &&
+            (!foreground || reconnectSuppressed || selectedAddress != address)
+        ) {
+            return ConnectionDecision.Disconnect
+        }
         registered = true
         registrationRequested = false
         connectionRequested = false
+        switchPending = false
         cancelRetry()
-        if ((reconnectSuppressed || !foreground) && intent != Intent.AwaitingPair) {
-            return ConnectionDecision.Disconnect
-        }
-        connectedAddress = normalizeBluetoothAddress(host.address)
+        connectedAddress = address
         hostStore.save(host)
         reconnectSuppressed = false
         intent = Intent.None
@@ -206,6 +229,59 @@ internal class ReconnectCoordinator(
     }
 
     fun rememberedHost(): RememberedHost? = hostStore.load()
+
+    fun rememberedHosts(): List<RememberedHost> = hostStore.loadAll()
+
+    fun selectHost(
+        address: String,
+        currentAddress: String?,
+        prerequisitesAvailable: Boolean,
+        bondedHosts: Collection<RememberedHost>?
+    ): List<ReconnectAction> {
+        val normalized = normalizeBluetoothAddress(address) ?: return emptyList()
+        val candidate = hostStore.loadAll().firstOrNull { it.address == normalized } ?: return emptyList()
+        if (bondedHosts != null && bondedHosts.none { normalizeBluetoothAddress(it.address) == normalized }) {
+            hostStore.remove(normalized)
+            return listOf(ReconnectAction.RememberedHostUnavailable(candidate.name))
+        }
+        hostStore.select(normalized) ?: return emptyList()
+        reconnectSuppressed = false
+        retryCount = 0
+        cancelRetry()
+
+        val activeAddress = normalizeBluetoothAddress(currentAddress)
+        if (activeAddress == normalized) {
+            switchPending = false
+            intent = Intent.None
+            return emptyList()
+        }
+
+        intent = Intent.Reconnect
+        connectionRequested = false
+        if (activeAddress != null) {
+            switchPending = true
+            return listOf(ReconnectAction.DisconnectCurrent)
+        }
+        switchPending = false
+        return if (prerequisitesAvailable) advance(bondedHosts) else emptyList()
+    }
+
+    fun onSwitchDisconnected(bondedHosts: Collection<RememberedHost>?): List<ReconnectAction> {
+        connectionRequested = false
+        connectedAddress = null
+        if (!switchPending) return emptyList()
+        switchPending = false
+        intent = Intent.Reconnect
+        return if (foreground) advance(bondedHosts) else emptyList()
+    }
+
+    fun onSwitchDisconnectFailed(currentAddress: String?) {
+        switchPending = false
+        connectionRequested = false
+        intent = Intent.None
+        reconnectSuppressed = false
+        normalizeBluetoothAddress(currentAddress)?.let(hostStore::select)
+    }
 
     fun isReconnectPending(): Boolean = intent == Intent.Reconnect
 
@@ -231,7 +307,7 @@ internal class ReconnectCoordinator(
             return emptyList()
         }
         val rememberedAddress = normalizeBluetoothAddress(remembered.address) ?: run {
-            hostStore.clear()
+            hostStore.remove(remembered.address)
             intent = Intent.None
             return listOf(ReconnectAction.RememberedHostUnavailable(remembered.name))
         }
@@ -243,7 +319,7 @@ internal class ReconnectCoordinator(
         val target = bondedHosts.firstOrNull {
             normalizeBluetoothAddress(it.address) == rememberedAddress
         } ?: run {
-            hostStore.clear()
+            hostStore.remove(rememberedAddress)
             intent = Intent.None
             return listOf(ReconnectAction.RememberedHostUnavailable(remembered.name))
         }

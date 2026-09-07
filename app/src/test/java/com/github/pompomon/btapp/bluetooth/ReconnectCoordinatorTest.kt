@@ -62,8 +62,8 @@ class ReconnectCoordinatorTest {
         fixture.coordinator.onConnectionRequestFailed()
         assertEquals(listOf(1_000L), fixture.scheduler.delays)
 
-        assertEquals(ConnectionDecision.Accept, fixture.coordinator.onConnected(other))
-        assertEquals(other, fixture.store.host)
+        assertEquals(ConnectionDecision.Accept, fixture.coordinator.onConnected(remembered))
+        assertEquals(remembered, fixture.store.host)
         assertFalse(fixture.scheduler.hasPendingTask)
 
         assertEquals(ReconnectDisposition.RetryScheduled, fixture.coordinator.onConnectionLost())
@@ -280,6 +280,91 @@ class ReconnectCoordinatorTest {
         )
     }
 
+    @Test fun `pairing another host retains both hosts and selects the new host`() {
+        val fixture = Fixture(remembered)
+        fixture.connectRememberedHost()
+        fixture.coordinator.onConnected(remembered)
+
+        assertEquals(
+            listOf(ReconnectAction.RequestDiscoverability),
+            fixture.coordinator.onPairRequested(true)
+        )
+        assertEquals(ConnectionDecision.Accept, fixture.coordinator.onConnected(other))
+
+        assertEquals(other, fixture.store.host)
+        assertEquals(setOf(remembered, other), fixture.store.loadAll().toSet())
+    }
+
+    @Test fun `switching hosts disconnects the active host before connecting the target`() {
+        val fixture = Fixture(remembered)
+        fixture.store.save(other)
+        fixture.store.select(remembered.address)
+        fixture.connectRememberedHost()
+        fixture.coordinator.onConnected(remembered)
+
+        assertEquals(
+            listOf(ReconnectAction.DisconnectCurrent),
+            fixture.coordinator.selectHost(
+                other.address,
+                remembered.address,
+                prerequisitesAvailable = true,
+                bondedHosts = listOf(remembered, other)
+            )
+        )
+        assertEquals(
+            listOf(ReconnectAction.Connect(other)),
+            fixture.coordinator.onSwitchDisconnected(listOf(remembered, other))
+        )
+        assertEquals(ConnectionDecision.Accept, fixture.coordinator.onConnected(other))
+        assertEquals(other, fixture.store.host)
+    }
+
+    @Test fun `switching to a stale host removes only that host`() {
+        val fixture = Fixture(remembered)
+        fixture.store.save(other)
+        fixture.store.select(remembered.address)
+
+        assertEquals(
+            listOf(ReconnectAction.RememberedHostUnavailable("Other PC")),
+            fixture.coordinator.selectHost(
+                other.address,
+                remembered.address,
+                prerequisitesAvailable = true,
+                bondedHosts = listOf(remembered)
+            )
+        )
+        assertEquals(listOf(remembered), fixture.store.loadAll())
+    }
+
+    @Test fun `unexpected host is rejected outside the pairing window`() {
+        val fixture = Fixture(remembered)
+        fixture.connectRememberedHost()
+
+        assertEquals(ConnectionDecision.Disconnect, fixture.coordinator.onConnected(other))
+        assertEquals(remembered, fixture.store.host)
+    }
+
+    @Test fun `host switch resumes after returning to foreground`() {
+        val fixture = Fixture(remembered)
+        fixture.store.save(other)
+        fixture.store.select(remembered.address)
+        fixture.connectRememberedHost()
+        fixture.coordinator.onConnected(remembered)
+        fixture.coordinator.selectHost(
+            other.address,
+            remembered.address,
+            prerequisitesAvailable = true,
+            bondedHosts = listOf(remembered, other)
+        )
+
+        fixture.coordinator.onBackground()
+        assertTrue(fixture.coordinator.onSwitchDisconnected(listOf(remembered, other)).isEmpty())
+        assertEquals(
+            listOf(ReconnectAction.Connect(other)),
+            fixture.coordinator.onForeground(true, listOf(remembered, other))
+        )
+    }
+
     private class Fixture(initialHost: RememberedHost? = null) {
         val store = FakeStore(initialHost)
         val scheduler = FakeScheduler()
@@ -297,15 +382,40 @@ class ReconnectCoordinatorTest {
         }
     }
 
-    private class FakeStore(var host: RememberedHost?) : RememberedHostStore {
-        override fun load(): RememberedHost? = host
+    private class FakeStore(initialHost: RememberedHost?) : RememberedHostStore {
+        private val hosts = mutableListOf<RememberedHost>()
+        private var selectedAddress: String? = null
+        val host: RememberedHost? get() = load()
+
+        init {
+            initialHost?.let(::save)
+        }
+
+        override fun load(): RememberedHost? =
+            hosts.firstOrNull { it.address == selectedAddress } ?: hosts.firstOrNull()
+
+        override fun loadAll(): List<RememberedHost> = hosts.toList()
 
         override fun save(host: RememberedHost) {
-            this.host = host
+            hosts.removeAll { it.address == host.address }
+            hosts += host
+            selectedAddress = host.address
+        }
+
+        override fun select(address: String): RememberedHost? {
+            val host = hosts.firstOrNull { it.address == address } ?: return null
+            selectedAddress = host.address
+            return host
+        }
+
+        override fun remove(address: String) {
+            hosts.removeAll { it.address == address }
+            if (selectedAddress == address) selectedAddress = hosts.firstOrNull()?.address
         }
 
         override fun clear() {
-            host = null
+            hosts.clear()
+            selectedAddress = null
         }
     }
 

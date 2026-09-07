@@ -4,14 +4,25 @@ import java.util.Locale
 
 internal const val DEFAULT_HOST_NAME = "Bluetooth host"
 
-internal data class RememberedHost(
+data class RememberedHost(
     val address: String,
     val name: String
 )
 
+data class HostSelection(
+    val hosts: List<RememberedHost> = emptyList(),
+    val selectedAddress: String? = null
+) {
+    val selectedHost: RememberedHost?
+        get() = hosts.firstOrNull { it.address == selectedAddress }
+}
+
 internal interface RememberedHostStore {
     fun load(): RememberedHost?
+    fun loadAll(): List<RememberedHost>
     fun save(host: RememberedHost)
+    fun select(address: String): RememberedHost?
+    fun remove(address: String)
     fun clear()
 }
 

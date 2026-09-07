@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import com.github.pompomon.btapp.bluetooth.BluetoothController
 import com.github.pompomon.btapp.bluetooth.ConnectionState
+import com.github.pompomon.btapp.bluetooth.HostSelection
 import com.github.pompomon.btapp.hid.HidReportEncoder
 import com.github.pompomon.btapp.input.KeyboardInputMapper
 import com.github.pompomon.btapp.input.PointerEvent
@@ -22,19 +23,26 @@ class ConnectionViewModel(application: Application) : AndroidViewModel(applicati
     val state: StateFlow<ConnectionState> = _state.asStateFlow()
     private val _events = Channel<ConnectionEvent>(Channel.BUFFERED)
     val events = _events.receiveAsFlow()
+    private val _hostSelection = MutableStateFlow(HostSelection())
+    val hostSelection: StateFlow<HostSelection> = _hostSelection.asStateFlow()
     private val controller = BluetoothController(
         application,
         { _state.value = it },
-        { _events.trySend(ConnectionEvent.RequestDiscoverability) }
+        { _events.trySend(ConnectionEvent.RequestDiscoverability) },
+        { _hostSelection.value = it }
     )
     private val mapper = KeyboardInputMapper()
+    private var keyboardPressed = false
 
     init {
         _state.value = controller.initialState()
     }
 
     fun onForeground() = controller.onForeground()
-    fun onBackground() = controller.onBackground()
+    fun onBackground() {
+        keyUp()
+        controller.onBackground()
+    }
     fun prepareForPermissionRequest() = controller.prepareForPermissionRequest()
     fun onPrerequisitesChanged() = controller.onPrerequisitesChanged()
     fun onDiscoverabilityResult(durationSeconds: Int) = controller.onDiscoverabilityResult(durationSeconds)
@@ -42,13 +50,33 @@ class ConnectionViewModel(application: Application) : AndroidViewModel(applicati
     fun reconnect() = controller.reconnect()
     fun disconnect() = controller.disconnect()
     fun forgetRememberedHost() = controller.forgetRememberedHost()
+    fun switchHost(address: String) = controller.switchHost(address)
 
     fun key(key: String, modifiers: Int = 0) {
+        keyDown(key, modifiers)
+        keyUp()
+    }
+
+    fun keyDown(key: String, modifiers: Int = 0) {
         if (!_state.value.acceptsHidInput) return
+        if (keyboardPressed) keyUp()
         val stroke = if (modifiers == 0) mapper.map(key) else mapper.shortcut(key, modifiers)
         if (stroke == null) return
-        if (controller.sendKeyboard(HidReportEncoder.keyboard(stroke.modifiers, listOf(stroke.usage)))) {
-            controller.sendKeyboard(HidReportEncoder.keyboard(0, emptyList()))
+        keyboardPressed = controller.sendKeyboard(
+            HidReportEncoder.keyboard(stroke.modifiers, listOf(stroke.usage))
+        )
+    }
+
+    fun keyUp() {
+        if (!keyboardPressed) return
+        keyboardPressed = false
+        controller.sendKeyboard(HidReportEncoder.keyboard(0, emptyList()))
+    }
+
+    fun media(usage: Int) {
+        if (!_state.value.acceptsHidInput) return
+        if (controller.sendConsumer(HidReportEncoder.consumer(usage))) {
+            controller.sendConsumer(HidReportEncoder.consumer(0))
         }
     }
 
