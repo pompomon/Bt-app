@@ -248,8 +248,8 @@ class BluetoothController(
     fun switchHost(address: String) {
         val prerequisiteState = initialState()
         val available = prerequisiteState == ConnectionState.Ready
-        val bondedHosts = if (available) bondedHosts() else null
-        val currentAddress = (host ?: connectionTarget)?.let(::deviceAddress)
+        val bondedHosts = if (available) bondedHosts() ?: return else null
+        val currentAddress = (host ?: connectionTarget)?.let { deviceAddress(it) ?: return }
         val actions = coordinator.selectHost(address, currentAddress, available, bondedHosts)
         notifyHostSelectionChanged()
         if (!available) {
@@ -511,9 +511,10 @@ class BluetoothController(
         connectedDeviceName = DEFAULT_HOST_NAME
         connectionConfirmed = false
         if (switchingHosts) {
-            val actions = coordinator.onSwitchDisconnected(bondedHosts())
+            val bondedHosts = bondedHosts()
+            val actions = coordinator.onSwitchDisconnected(bondedHosts)
             notifyHostSelectionChanged()
-            if (actions.isEmpty()) showStableState()
+            if (bondedHosts != null && actions.isEmpty()) showStableState()
             executeActions(actions)
             return
         }
@@ -529,8 +530,9 @@ class BluetoothController(
             ReconnectDisposition.Exhausted ->
                 onStateChanged(ConnectionState.ReconnectFailed(name, "Could not reconnect. Tap Retry to try again."))
             ReconnectDisposition.ReconnectNow -> {
-                val actions = coordinator.onPrerequisitesAvailable(bondedHosts())
-                if (actions.isEmpty()) showStableState()
+                val bondedHosts = bondedHosts()
+                val actions = coordinator.onPrerequisitesAvailable(bondedHosts)
+                if (bondedHosts != null && actions.isEmpty()) showStableState()
                 executeActions(actions)
             }
             ReconnectDisposition.Idle -> showStableState()

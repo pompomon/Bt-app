@@ -319,6 +319,37 @@ class ReconnectCoordinatorTest {
         assertEquals(other, fixture.store.host)
     }
 
+    @Test fun `host switch waits for permission recovery after disconnect`() {
+        val fixture = Fixture(remembered)
+        fixture.store.save(other)
+        fixture.store.select(remembered.address)
+        fixture.connectRememberedHost()
+        fixture.coordinator.onConnected(remembered)
+        fixture.coordinator.selectHost(
+            other.address,
+            remembered.address,
+            prerequisitesAvailable = true,
+            bondedHosts = listOf(remembered, other)
+        )
+
+        assertTrue(fixture.coordinator.onSwitchDisconnected(null).isEmpty())
+        assertTrue(fixture.coordinator.isReconnectPending())
+        assertEquals(other, fixture.store.host)
+        assertEquals(setOf(remembered, other), fixture.store.loadAll().toSet())
+        assertFalse(fixture.scheduler.hasPendingTask)
+        assertTrue(fixture.coordinator.onPrerequisitesAvailable(null).isEmpty())
+
+        fixture.coordinator.prepareForPermissionRequest()
+        assertEquals(
+            listOf(ReconnectAction.Connect(other)),
+            fixture.coordinator.onPrerequisitesAvailable(listOf(remembered, other))
+        )
+        assertTrue(
+            fixture.coordinator.onPrerequisitesAvailable(listOf(remembered, other)).isEmpty()
+        )
+        assertEquals(ConnectionDecision.Accept, fixture.coordinator.onConnected(other))
+    }
+
     @Test fun `switching to a stale host removes only that host`() {
         val fixture = Fixture(remembered)
         fixture.store.save(other)
