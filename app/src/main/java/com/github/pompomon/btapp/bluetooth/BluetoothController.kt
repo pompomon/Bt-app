@@ -38,12 +38,14 @@ sealed interface ConnectionState {
 class BluetoothController(
     private val context: Context,
     private val onStateChanged: (ConnectionState) -> Unit,
-    private val onDiscoverabilityRequested: () -> Unit
+    private val onDiscoverabilityRequested: () -> Unit,
+    private val onHostSelectionChanged: (HostSelection) -> Unit = {}
 ) {
     private val adapter: BluetoothAdapter? = context.getSystemService(BluetoothManager::class.java)?.adapter
     private var hidDevice: BluetoothHidDevice? = null
     private var host: BluetoothDevice? = null
     private var connectionTarget: BluetoothDevice? = null
+    private var switchDisconnectAddress: String? = null
     private var connectedIdentityPending = false
     private var connectedDeviceName = DEFAULT_HOST_NAME
     private var connectionConfirmed = false
@@ -54,11 +56,16 @@ class BluetoothController(
     private var closed = false
     private val executor: Executor = context.mainExecutor
     private val pairingWindowScheduler = HandlerReconnectScheduler()
+    private val hostStore = RememberedHostPreferences(context)
     private val coordinator = ReconnectCoordinator(
-        RememberedHostPreferences(context),
+        hostStore,
         HandlerReconnectScheduler(),
         ::executeActions
     )
+
+    init {
+        notifyHostSelectionChanged()
+    }
 
     private val callback = object : BluetoothHidDevice.Callback() {
         override fun onAppStatusChanged(pluggedDevice: BluetoothDevice?, registered: Boolean) {
@@ -78,6 +85,7 @@ class BluetoothController(
             } else {
                 host = null
                 connectionTarget = null
+                switchDisconnectAddress = null
                 connectedIdentityPending = false
                 connectedDeviceName = DEFAULT_HOST_NAME
                 connectionConfirmed = false
@@ -93,6 +101,8 @@ class BluetoothController(
                             )
                         ReconnectDisposition.Exhausted ->
                             showReconnectFailure("Bluetooth HID registration was interrupted. Tap Retry to try again.")
+                        ReconnectDisposition.ReconnectNow ->
+                            executeActions(coordinator.onPrerequisitesAvailable(bondedHosts()))
                         ReconnectDisposition.Idle -> onStateChanged(initialState())
                     }
                 }
@@ -231,7 +241,23 @@ class BluetoothController(
 
     fun forgetRememberedHost() {
         coordinator.forgetRememberedHost()
+        notifyHostSelectionChanged()
         showStableState()
+    }
+
+    fun switchHost(address: String) {
+        val prerequisiteState = initialState()
+        val available = prerequisiteState == ConnectionState.Ready
+        val bondedHosts = if (available) bondedHosts() ?: return else null
+        val currentAddress = (host ?: connectionTarget)?.let { deviceAddress(it) ?: return }
+        val actions = coordinator.selectHost(address, currentAddress, available, bondedHosts)
+        notifyHostSelectionChanged()
+        if (!available) {
+            onStateChanged(prerequisiteState)
+            return
+        }
+        if (actions.isEmpty()) showStableState()
+        executeActions(actions)
     }
 
     private fun ensureRegistration() {
@@ -309,6 +335,7 @@ class BluetoothController(
             hidDevice = null
             host = null
             connectionTarget = null
+            switchDisconnectAddress = null
             connectedIdentityPending = false
             connectionConfirmed = false
             coordinator.onRegistrationLost()
@@ -322,6 +349,8 @@ class BluetoothController(
                         )
                     ReconnectDisposition.Exhausted ->
                         showReconnectFailure("Bluetooth HID service was interrupted. Tap Retry to try again.")
+                    ReconnectDisposition.ReconnectNow ->
+                        executeActions(coordinator.onPrerequisitesAvailable(bondedHosts()))
                     ReconnectDisposition.Idle -> onStateChanged(initialState())
                 }
             }
@@ -331,8 +360,8 @@ class BluetoothController(
     private fun registerApp(device: BluetoothHidDevice) {
         if (closed || pendingRegistration || appRegistered) return
         val sdp = BluetoothHidDeviceAppSdpSettings(
-            "Bt-app keyboard and mouse",
-            "Standard Bluetooth HID keyboard and relative mouse",
+            "Bt-app keyboard, mouse, and media controls",
+            "Standard Bluetooth HID keyboard, relative mouse, and consumer controls",
             "pompomon",
             BluetoothHidDevice.SUBCLASS1_COMBO,
             HidDescriptor.bytes
@@ -359,6 +388,7 @@ class BluetoothController(
             is BondedDeviceLookup.Found -> result.device
             BondedDeviceLookup.Missing -> {
                 coordinator.forgetRememberedHost()
+                notifyHostSelectionChanged()
                 onStateChanged(
                     ConnectionState.Error("${rememberedHost.name} is no longer paired. Pair it again.")
                 )
@@ -414,8 +444,10 @@ class BluetoothController(
                 pairingWindowScheduler.cancel()
                 host = device
                 connectionTarget = null
+                switchDisconnectAddress = null
                 connectedDeviceName = identity.name
                 connectionConfirmed = true
+                notifyHostSelectionChanged()
                 onStateChanged(ConnectionState.Connected(connectedDeviceName))
             }
             ConnectionDecision.Disconnect -> {
@@ -470,12 +502,22 @@ class BluetoothController(
         val targetAddress = connectionTarget?.let(::deviceAddress)
         if (activeAddress != disconnectedAddress && targetAddress != disconnectedAddress) return
 
+        val switchingHosts = switchDisconnectAddress == disconnectedAddress
+        if (switchingHosts) switchDisconnectAddress = null
         val name = deviceName(device, connectedDeviceName)
         host = null
         connectionTarget = null
         connectedIdentityPending = false
         connectedDeviceName = DEFAULT_HOST_NAME
         connectionConfirmed = false
+        if (switchingHosts) {
+            val bondedHosts = bondedHosts()
+            val actions = coordinator.onSwitchDisconnected(bondedHosts)
+            notifyHostSelectionChanged()
+            if (bondedHosts != null && actions.isEmpty()) showStableState()
+            executeActions(actions)
+            return
+        }
         when (coordinator.onConnectionLost()) {
             ReconnectDisposition.RetryScheduled ->
                 onStateChanged(
@@ -487,6 +529,12 @@ class BluetoothController(
                 )
             ReconnectDisposition.Exhausted ->
                 onStateChanged(ConnectionState.ReconnectFailed(name, "Could not reconnect. Tap Retry to try again."))
+            ReconnectDisposition.ReconnectNow -> {
+                val bondedHosts = bondedHosts()
+                val actions = coordinator.onPrerequisitesAvailable(bondedHosts)
+                if (bondedHosts != null && actions.isEmpty()) showStableState()
+                executeActions(actions)
+            }
             ReconnectDisposition.Idle -> showStableState()
         }
     }
@@ -497,6 +545,7 @@ class BluetoothController(
             when (action) {
                 ReconnectAction.RegisterHid -> ensureRegistration()
                 is ReconnectAction.Connect -> requestConnection(action.host)
+                ReconnectAction.DisconnectCurrent -> disconnectForHostSwitch()
                 ReconnectAction.RequestDiscoverability -> {
                     showStableState()
                     onDiscoverabilityRequested()
@@ -507,6 +556,55 @@ class BluetoothController(
                     )
                 }
                 ReconnectAction.Retry -> retryReconnect()
+            }
+        }
+        notifyHostSelectionChanged()
+    }
+
+    private fun disconnectForHostSwitch() {
+        if (switchDisconnectAddress != null) return
+        val target = host ?: connectionTarget
+        if (target == null) {
+            executeActions(coordinator.onSwitchDisconnected(bondedHosts()))
+            return
+        }
+        val currentAddress = deviceAddress(target) ?: run {
+            coordinator.onSwitchDisconnectFailed(null)
+            notifyHostSelectionChanged()
+            return
+        }
+        val device = hidDevice
+        if (device == null) {
+            coordinator.onSwitchDisconnectFailed(currentAddress)
+            notifyHostSelectionChanged()
+            showConnectionError("Bluetooth HID profile is unavailable.")
+            return
+        }
+        switchDisconnectAddress = currentAddress
+        val name = deviceName(target, connectedDeviceName)
+        val requested = try {
+            if (host != null) releaseInputs(device, target)
+            device.disconnect(target)
+        } catch (exception: SecurityException) {
+            switchDisconnectAddress = null
+            coordinator.onSwitchDisconnectFailed(currentAddress)
+            notifyHostSelectionChanged()
+            Log.w(TAG, "Bluetooth host switch rejected", exception)
+            onStateChanged(ConnectionState.PermissionRequired)
+            return
+        }
+        if (requested) {
+            connectionConfirmed = false
+            onStateChanged(ConnectionState.Disconnecting(name))
+        } else {
+            switchDisconnectAddress = null
+            coordinator.onSwitchDisconnectFailed(currentAddress)
+            notifyHostSelectionChanged()
+            if (host != null) {
+                showConnectionError("Could not disconnect from the current Bluetooth host.")
+            } else {
+                connectionTarget = null
+                showStableState()
             }
         }
     }
@@ -524,11 +622,13 @@ class BluetoothController(
 
     fun sendKeyboard(report: ByteArray) = send(HidReportEncoder.KEYBOARD_REPORT_ID, report)
     fun sendMouse(report: ByteArray) = send(HidReportEncoder.MOUSE_REPORT_ID, report)
+    fun sendConsumer(report: ByteArray) = send(HidReportEncoder.CONSUMER_REPORT_ID, report)
 
     private fun send(reportId: Int, report: ByteArray): Boolean {
         require(
             (reportId == HidReportEncoder.KEYBOARD_REPORT_ID && report.size == 9) ||
-                (reportId == HidReportEncoder.MOUSE_REPORT_ID && report.size == 5)
+                (reportId == HidReportEncoder.MOUSE_REPORT_ID && report.size == 5) ||
+                (reportId == HidReportEncoder.CONSUMER_REPORT_ID && report.size == 3)
         ) { "HID report ID and payload length do not match." }
         val target = host ?: run {
             showStableState()
@@ -562,6 +662,7 @@ class BluetoothController(
 
     fun disconnect() {
         coordinator.onManualDisconnect()
+        switchDisconnectAddress = null
         val target = host ?: connectionTarget
         if (target == null) {
             val remembered = coordinator.rememberedHost()
@@ -641,6 +742,7 @@ class BluetoothController(
         hidDevice = null
         host = null
         connectionTarget = null
+        switchDisconnectAddress = null
         connectedIdentityPending = false
         connectionConfirmed = false
     }
@@ -656,6 +758,11 @@ class BluetoothController(
             target,
             HidReportEncoder.MOUSE_REPORT_ID,
             HidReportEncoder.mouse(0, 0, 0).copyOfRange(1, 5)
+        )
+        device.sendReport(
+            target,
+            HidReportEncoder.CONSUMER_REPORT_ID,
+            HidReportEncoder.consumer(0).copyOfRange(1, 3)
         )
     }
 
@@ -751,6 +858,15 @@ class BluetoothController(
 
     private fun showConnectionError(message: String) {
         onStateChanged(ConnectionState.Connected(connectedDeviceName, message))
+    }
+
+    private fun notifyHostSelectionChanged() {
+        onHostSelectionChanged(
+            HostSelection(
+                hosts = coordinator.rememberedHosts(),
+                selectedAddress = coordinator.rememberedHost()?.address
+            )
+        )
     }
 
     private fun closeProfileProxy(proxy: BluetoothProfile) {

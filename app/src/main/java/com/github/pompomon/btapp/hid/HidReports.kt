@@ -1,10 +1,7 @@
 package com.github.pompomon.btapp.hid
 
-import kotlin.math.abs
-import kotlin.math.sign
-
 object HidDescriptor {
-    // Report IDs: 1 keyboard (modifier + six keys), 2 relative mouse (buttons, x, y, wheel).
+    // Report IDs: 1 keyboard, 2 relative mouse, 3 consumer control.
     val bytes = byteArrayOf(
         0x05, 0x01, 0x09, 0x06, 0xA1.toByte(), 0x01, 0x85.toByte(), 0x01, 0x05, 0x07,
         0x19, 0xE0.toByte(), 0x29, 0xE7.toByte(), 0x15, 0x00, 0x25, 0x01, 0x75, 0x01,
@@ -16,13 +13,27 @@ object HidDescriptor {
         0x25, 0x01, 0x95.toByte(), 0x03, 0x75, 0x01, 0x81.toByte(), 0x02, 0x95.toByte(), 0x01,
         0x75, 0x05, 0x81.toByte(), 0x01, 0x05, 0x01, 0x09, 0x30, 0x09, 0x31,
         0x09, 0x38, 0x15, 0x81.toByte(), 0x25, 0x7F, 0x75, 0x08, 0x95.toByte(), 0x03,
-        0x81.toByte(), 0x06, 0xC0.toByte(), 0xC0.toByte()
+        0x81.toByte(), 0x06, 0xC0.toByte(), 0xC0.toByte(),
+        0x05, 0x0C, 0x09, 0x01, 0xA1.toByte(), 0x01, 0x85.toByte(), 0x03, 0x15, 0x00,
+        0x26, 0xFF.toByte(), 0x03, 0x19, 0x00, 0x2A, 0xFF.toByte(), 0x03, 0x75, 0x10,
+        0x95.toByte(), 0x01, 0x81.toByte(), 0x00, 0xC0.toByte()
     )
+}
+
+object ConsumerUsage {
+    const val PLAY_PAUSE = 0x00CD
+    const val STOP = 0x00B7
+    const val NEXT_TRACK = 0x00B5
+    const val PREVIOUS_TRACK = 0x00B6
+    const val MUTE = 0x00E2
+    const val VOLUME_UP = 0x00E9
+    const val VOLUME_DOWN = 0x00EA
 }
 
 object HidReportEncoder {
     const val KEYBOARD_REPORT_ID = 1
     const val MOUSE_REPORT_ID = 2
+    const val CONSUMER_REPORT_ID = 3
     const val MAX_RELATIVE_DELTA = 127
 
     fun keyboard(modifiers: Int, usages: Collection<Int>): ByteArray {
@@ -35,6 +46,11 @@ object HidReportEncoder {
         require(buttons in 0..7)
         require(x in -127..127 && y in -127..127 && wheel in -127..127)
         return byteArrayOf(MOUSE_REPORT_ID.toByte(), buttons.toByte(), x.toByte(), y.toByte(), wheel.toByte())
+    }
+
+    fun consumer(usage: Int): ByteArray {
+        require(usage in 0..0x03ff)
+        return byteArrayOf(CONSUMER_REPORT_ID.toByte(), usage.toByte(), (usage shr 8).toByte())
     }
 
     fun mouseSequence(buttons: Int, x: Int, y: Int, wheel: Int = 0): List<ByteArray> =

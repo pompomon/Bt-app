@@ -27,4 +27,20 @@ class HidReportEncoderTest {
         } catch (_: IllegalArgumentException) {
         }
     }
+
+    @Test fun `consumer report encodes usages in little endian and supports release`() {
+        assertArrayEquals(
+            byteArrayOf(3, 0xE9.toByte(), 0),
+            HidReportEncoder.consumer(ConsumerUsage.VOLUME_UP)
+        )
+        assertArrayEquals(byteArrayOf(3, 0, 0), HidReportEncoder.consumer(0))
+    }
+
+    @Test fun `consumer report rejects usages outside descriptor range`() {
+        try {
+            HidReportEncoder.consumer(0x0400)
+            throw AssertionError("Expected invalid consumer usage to fail")
+        } catch (_: IllegalArgumentException) {
+        }
+    }
 }
