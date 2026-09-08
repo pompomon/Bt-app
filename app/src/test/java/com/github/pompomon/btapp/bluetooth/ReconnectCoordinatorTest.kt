@@ -336,6 +336,25 @@ class ReconnectCoordinatorTest {
         assertEquals(listOf(remembered), fixture.store.loadAll())
     }
 
+    @Test fun `stale switch target keeps the active host connected`() {
+        val fixture = Fixture(remembered)
+        fixture.store.save(other)
+        fixture.store.select(remembered.address)
+        fixture.connectRememberedHost()
+        fixture.coordinator.onConnected(remembered)
+
+        assertTrue(
+            fixture.coordinator.selectHost(
+                other.address,
+                remembered.address,
+                prerequisitesAvailable = true,
+                bondedHosts = listOf(remembered)
+            ).isEmpty()
+        )
+        assertEquals(remembered, fixture.store.host)
+        assertEquals(listOf(remembered), fixture.store.loadAll())
+    }
+
     @Test fun `forgetting the selected host retains other remembered hosts`() {
         val fixture = Fixture(remembered)
         fixture.store.save(other)
@@ -358,6 +377,33 @@ class ReconnectCoordinatorTest {
                 prerequisitesAvailable = true,
                 bondedHosts = listOf(remembered)
             ).isEmpty()
+        )
+    }
+
+    @Test fun `switching back during disconnect reconnects the original host`() {
+        val fixture = Fixture(remembered)
+        fixture.store.save(other)
+        fixture.store.select(remembered.address)
+        fixture.connectRememberedHost()
+        fixture.coordinator.onConnected(remembered)
+        fixture.coordinator.selectHost(
+            other.address,
+            remembered.address,
+            prerequisitesAvailable = true,
+            bondedHosts = listOf(remembered, other)
+        )
+
+        assertTrue(
+            fixture.coordinator.selectHost(
+                remembered.address,
+                remembered.address,
+                prerequisitesAvailable = true,
+                bondedHosts = listOf(remembered, other)
+            ).isEmpty()
+        )
+        assertEquals(
+            listOf(ReconnectAction.Connect(remembered)),
+            fixture.coordinator.onSwitchDisconnected(listOf(remembered, other))
         )
     }
 

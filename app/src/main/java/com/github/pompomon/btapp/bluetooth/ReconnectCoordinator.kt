@@ -240,19 +240,22 @@ internal class ReconnectCoordinator(
     ): List<ReconnectAction> {
         val normalized = normalizeBluetoothAddress(address) ?: return emptyList()
         val candidate = hostStore.loadAll().firstOrNull { it.address == normalized } ?: return emptyList()
+        val activeAddress = normalizeBluetoothAddress(currentAddress)
         if (bondedHosts != null && bondedHosts.none { normalizeBluetoothAddress(it.address) == normalized }) {
             hostStore.remove(normalized)
-            return listOf(ReconnectAction.RememberedHostUnavailable(candidate.name))
+            return if (normalizeBluetoothAddress(connectedAddress) != null) {
+                emptyList()
+            } else {
+                listOf(ReconnectAction.RememberedHostUnavailable(candidate.name))
+            }
         }
         hostStore.select(normalized) ?: return emptyList()
         reconnectSuppressed = false
         retryCount = 0
         cancelRetry()
 
-        val activeAddress = normalizeBluetoothAddress(currentAddress)
         if (activeAddress == normalized) {
-            switchPending = false
-            intent = Intent.None
+            if (!switchPending) intent = Intent.None
             return emptyList()
         }
 

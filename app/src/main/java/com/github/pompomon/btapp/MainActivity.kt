@@ -15,6 +15,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitLongPressOrCancellation
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -59,6 +60,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -701,11 +703,20 @@ private fun KeyboardButton(
                     up?.consume()
                     if (up != null) onClick()
                 } else {
-                    onPress()
-                    try {
-                        waitForUpOrCancellation()?.consume()
-                    } finally {
-                        onRelease?.invoke()
+                    val longPress = awaitLongPressOrCancellation(down.id)
+                    if (longPress == null) {
+                        val up = currentEvent.changes.firstOrNull {
+                            it.id == down.id && it.changedToUpIgnoreConsumed() && !it.isConsumed
+                        }
+                        up?.consume()
+                        if (up != null) onClick()
+                    } else {
+                        onPress()
+                        try {
+                            waitForUpOrCancellation()?.consume()
+                        } finally {
+                            onRelease?.invoke()
+                        }
                     }
                 }
             }
