@@ -159,6 +159,7 @@ internal class ReconnectCoordinator(
     fun onReconnectInProgress() {
         intent = Intent.Reconnect
         connectionRequested = true
+        connectedAddress = null
         cancelRetry()
     }
 

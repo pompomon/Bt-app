@@ -136,6 +136,7 @@ class ReconnectCoordinatorTest {
         fixture.coordinator.onReconnectInProgress()
 
         assertTrue(fixture.coordinator.onBackground())
+        assertEquals(ConnectionDecision.Disconnect, fixture.coordinator.onConnected(remembered))
     }
 
     @Test fun `backgrounding cancels an in-flight automatic reconnect`() {
