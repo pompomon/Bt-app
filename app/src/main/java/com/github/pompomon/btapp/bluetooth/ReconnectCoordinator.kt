@@ -159,6 +159,7 @@ internal class ReconnectCoordinator(
     fun onReconnectInProgress() {
         intent = Intent.Reconnect
         connectionRequested = true
+        connectedAddress = null
         cancelRetry()
     }
 
@@ -200,8 +201,10 @@ internal class ReconnectCoordinator(
         val address = normalizeBluetoothAddress(host.address) ?: return ConnectionDecision.Disconnect
         val acceptingPair = intent == Intent.AwaitingPair
         val selectedAddress = normalizeBluetoothAddress(hostStore.load()?.address)
+        val alreadyConnected = connectedAddress == address && selectedAddress == address
         if (
             !acceptingPair &&
+            !(alreadyConnected && !reconnectSuppressed) &&
             (!foreground || reconnectSuppressed || selectedAddress != address)
         ) {
             return ConnectionDecision.Disconnect
