@@ -190,6 +190,7 @@ class ReconnectCoordinatorTest {
 
         fixture.coordinator.onManualDisconnect()
 
+        assertEquals(ConnectionDecision.Disconnect, fixture.coordinator.onConnected(remembered))
         assertEquals(ReconnectDisposition.Idle, fixture.coordinator.onConnectionRequestFailed())
         assertTrue(fixture.coordinator.onForeground(true, listOf(remembered)).isEmpty())
         assertEquals(ReconnectDisposition.Idle, fixture.coordinator.onConnectionLost())
@@ -293,6 +294,18 @@ class ReconnectCoordinatorTest {
 
         assertEquals(other, fixture.store.host)
         assertEquals(setOf(remembered, other), fixture.store.loadAll().toSet())
+    }
+
+    @Test fun `duplicate connection callback after background pairing remains accepted`() {
+        val fixture = Fixture()
+        fixture.coordinator.onForeground(true, emptyList())
+        fixture.coordinator.onPairRequested(true)
+        fixture.coordinator.onRegistrationSucceeded(emptyList())
+        fixture.coordinator.onBackground()
+
+        assertEquals(ConnectionDecision.Accept, fixture.coordinator.onConnected(other))
+        assertEquals(ConnectionDecision.Accept, fixture.coordinator.onConnected(other))
+        assertEquals(other, fixture.store.host)
     }
 
     @Test fun `switching hosts disconnects the active host before connecting the target`() {
